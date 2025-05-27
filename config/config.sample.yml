@@ -1,0 +1,74 @@
+reddit:
+  client_id: 'clientid'
+  secret_key: 'secret-key'
+  redirect_uri: 'http://localhost/arthur/me/empleadoEstatalBot'
+  scopes: ['submit', 'read']
+  username: 'username'
+  password: 'password'
+  banned_domains: ['imgur.com',
+                   '*.imgur.com',
+                   'twitter.com',
+                   '*.twitter.com',
+                   'al-monitor.com',
+                   'youtube.com',
+                   'reddit.com',
+                   '*.redd.it',
+                   'redd.it',
+                   '*.reddit.com',
+                   '*.ru',
+                   'rt.com',
+                   't.me',
+                   '*.t.me',
+                   '*.redditmedia.com',
+                   'self.*',
+                   'youtube.com',
+                   'youtu.be',
+                   '*.youtube.com',
+                   'storify.com',
+                   'buzzfeed.com',
+                   'radiocut.fm',
+                   '*.radiocut.fm',
+                   'vid.me',
+                   'vocaroo.com',
+                   'facebook.com',
+                   'ft.com',
+                   '*.pdf',
+                   'instagram.com',
+                   'forms.gle',
+                   'theafricareport.com',
+                   'vimeo.com',
+                   '*.vimeo.com',
+                   'ciudadanodiario.com.ar',
+                   'araucaniadiario.cl',
+                   'couriermail.com.au',
+                   'ambito.com',
+                   'boletinoficial.gob.ar',
+                   'lavozdemisiones.com',
+                   'streamable.com',
+                   'soundcloud.com',
+                   'gfycat.com',
+                   '*.gfycat.com',
+                   'wapo.st',
+                   'washingtonpost.com',
+                   'bloomberg.com',
+                   'gaceta.com.ar',
+                   'rferl.org',
+                   'stories.starbucks.com',
+                   '*.png',
+                   '*.jpg',
+                   '*.jpeg',
+                   '*.gif'
+                   ]
+  subreddits: ['testempleadoestatal']
+
+  distinguishable: ['testempleadoestatal']
+
+newspaper_processor:
+  url_shorteners: ['t.co',
+                   'goo.gl',
+                   'bit.ly'
+                   ]
+#  signature: '<div id="firma"><hr><p><a href="https://www.reddit.com/user/subtepass/">Owner</a> | <a href="https://github.com/andreskrey/empleadoEstatalBot">Source Code</a> | <a href="https://empleadoestatalbot.ddns.net/">Stats</a></p></div>'
+  signature: '<div id="firma"><hr><p><a href="https://www.reddit.com/user/urielsalis">Maintainer</a> | <a href="https://www.reddit.com/user/subtepass">Creator</a> | <a href="https://github.com/urielsalis/empleadoEstatalBot">Source Code</a>'
+  coverage: ['testempleadoestatal']
+  max_length: 9000

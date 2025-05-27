@@ -22,7 +22,7 @@ jobs:
       with:
         python-version-file: "pyproject.toml"
     - name: Install the project
-      run: uv sync --locked --all-extras --dev
+      run: uv sync --all-extras --dev
     - name: Run linter
       run: uv run ruff check .
     - name: Run tests

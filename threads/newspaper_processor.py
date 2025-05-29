@@ -8,7 +8,6 @@ class NewspaperProcessorThread(BaseThread):
     def __init__(self, logger: logging.Logger):
         super().__init__(logger)
         self.config = load_config()
-        self.logger.info(f"Loaded config: {self.config}")
         self.signature = self.config['newspaper_processor']['signature']
         self.logger.info(f"Loaded signature: {self.signature}")
     

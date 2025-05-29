@@ -23,8 +23,7 @@ def get_stats_from_db() -> Dict[str, int]:
     if not db_path.exists():
         return {}
     
-    conn = get_db_connection(str(db_path))
-    try:
+    with get_db_connection(str(db_path)) as conn:
         cursor = conn.cursor()
         
         # Get basic stats
@@ -58,8 +57,6 @@ def get_stats_from_db() -> Dict[str, int]:
         stats['remaining_to_post'] = cursor.fetchone()[0]
         
         return stats
-    finally:
-        conn.close()
 
 def update_cache():
     """Update the stats cache periodically."""

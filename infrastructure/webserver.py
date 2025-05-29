@@ -9,6 +9,7 @@ from pathlib import Path
 import logging
 
 from infrastructure.database import get_db_connection
+from infrastructure.config import get_monitored_subreddits, get_distinguished_subreddits
 
 app = FastAPI(title="Bot Stats Dashboard")
 templates = Jinja2Templates(directory="templates")
@@ -115,12 +116,18 @@ async def stats_page(request: Request):
             except (ValueError, TypeError):
                 display_stats['newest_post'] = 'N/A'
         
+        # Get subreddit information
+        monitored_subreddits = get_monitored_subreddits()
+        distinguished_subreddits = get_distinguished_subreddits()
+        
         return templates.TemplateResponse(
             "stats.html",
             {
                 "request": request,
                 "stats": display_stats,
-                "last_update": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(last_cache_update))
+                "last_update": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(last_cache_update)),
+                "monitored_subreddits": monitored_subreddits,
+                "distinguished_subreddits": distinguished_subreddits
             }
         )
     except Exception as e:

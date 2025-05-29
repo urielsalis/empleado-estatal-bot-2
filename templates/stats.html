@@ -179,6 +179,68 @@
             box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
         }
 
+        .subreddits-section {
+            margin: 2rem 0;
+            padding: 1.5rem;
+            background-color: var(--card-bg);
+            border-radius: 0.75rem;
+            border: 1px solid var(--border-color);
+        }
+
+        .section-title {
+            color: var(--text-primary);
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+
+        .subreddits-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1rem;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .subreddit-card {
+            background-color: var(--bg-color);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .subreddit-name {
+            color: var(--text-primary);
+            font-weight: 600;
+            font-size: 1.1rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            width: 100%;
+            text-align: center;
+        }
+
+        .mode-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 1rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .mode-badge.distinguished {
+            background-color: var(--success-color);
+            color: white;
+        }
+
+        .mode-badge.regular {
+            background-color: var(--text-secondary);
+            color: white;
+        }
+
         .last-update {
             text-align: center;
             color: var(--text-secondary);
@@ -280,6 +342,22 @@
             <div class="timestamp-card">
                 <div class="stat-label">Newest Post</div>
                 <div class="stat-value">{{ stats.get('newest_post', 'N/A') }}</div>
+            </div>
+        </div>
+
+        <div class="subreddits-section">
+            <h2 class="section-title">Active Subreddits</h2>
+            <div class="subreddits-grid">
+                {% for subreddit in monitored_subreddits %}
+                <div class="subreddit-card">
+                    <div class="subreddit-name">r/{{ subreddit }}</div>
+                    {% if subreddit in distinguished_subreddits %}
+                    <div class="subreddit-mode">
+                        <span class="mode-badge distinguished">Sticky</span>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
             </div>
         </div>
 

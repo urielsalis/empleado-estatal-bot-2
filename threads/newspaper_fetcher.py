@@ -1,4 +1,5 @@
 import logging
+import time
 from curl_cffi import requests
 from .base_thread import BaseThread
 from infrastructure.database import (
@@ -27,7 +28,9 @@ class NewspaperFetcherThread(BaseThread):
                         response = requests.get(url, impersonate="chrome110")
                         if response.status_code != 200:
                             self.logger.error(f"Failed to fetch {url}: {response.status_code}")
-                            handle_fetch_retry(post_id)
+                            # Calculate retry time: 5 minutes * (2 ^ retry_count)
+                            retry_time = int(time.time()) + (300 * (2 ** 0))  # Start with 5 minutes
+                            handle_fetch_retry(post_id, retry_time)
                             continue
                             
                         # Store the raw text
@@ -36,7 +39,9 @@ class NewspaperFetcherThread(BaseThread):
                         
                     except Exception as e:
                         self.logger.error(f"Error processing {url}: {e}")
-                        handle_fetch_retry(post_id)
+                        # Calculate retry time: 5 minutes * (2 ^ retry_count)
+                        retry_time = int(time.time()) + (300 * (2 ** 0))  # Start with 5 minutes
+                        handle_fetch_retry(post_id, retry_time)
                         continue
                         
         except Exception as e:

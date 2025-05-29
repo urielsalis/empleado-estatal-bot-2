@@ -79,8 +79,8 @@ wheels/
 *.log
 logs/
 
-config.yml
-config.bak.yml
+config/config.yml
+config/config.bak.yml
 
 # Database
 data/bot.db

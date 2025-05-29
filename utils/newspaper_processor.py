@@ -31,13 +31,11 @@ def replace_ru_domains(text: str) -> str:
     
     return URL_REGEX.sub(replace_url, text)
 
-def extract_article_text(html_content: str, url: Optional[str] = None, signature: str = None) -> Optional[str]:
+def extract_article_text(html_content: str, signature: str) -> Optional[str]:
     """
     Extract the main article text from raw HTML content, sanitize, convert to Markdown, and sign it.
     Returns a Markdown string. The signature parameter is required and will be appended as HTML before Markdown conversion.
     """
-    if not signature:
-        raise ValueError("A signature must be provided from config.")
     try:
         # Use readabilipy to extract the main content
         try:

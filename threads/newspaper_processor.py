@@ -8,7 +8,9 @@ class NewspaperProcessorThread(BaseThread):
     def __init__(self, logger: logging.Logger):
         super().__init__(logger)
         self.config = load_config()
+        self.logger.info(f"Loaded config: {self.config}")
         self.signature = self.config['newspaper_processor']['signature']
+        self.logger.info(f"Loaded signature: {self.signature}")
     
     def process_cycle(self):
         """Process newspaper articles."""
@@ -21,6 +23,7 @@ class NewspaperProcessorThread(BaseThread):
                 for post_id, raw_text in posts:
                     try:
                         # Process the article text
+                        self.logger.info(f"Processing post {post_id} with signature: {self.signature}")
                         processed_text = extract_article_text(raw_text, self.signature)
                         
                         if processed_text:

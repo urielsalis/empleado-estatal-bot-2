@@ -133,7 +133,7 @@ async def custom_500_handler(request: Request, exc: HTTPException):
         status_code=500
     )
 
-def start_webserver(host: str = "127.0.0.1", port: int = 8000):
+def start_webserver(host: str = "0.0.0.0", port: int = 8000):
     """Start the webserver in a separate thread."""
     # Start cache update thread
     cache_thread = threading.Thread(target=update_cache, daemon=True)

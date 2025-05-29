@@ -10,7 +10,8 @@ from infrastructure.database import (
     get_posts_to_fetch, 
     mark_post_as_fetched, 
     increment_retry_and_schedule,
-    delete_post
+    delete_post,
+    _update_stat
 )
 
 class NewspaperFetcherThread(BaseThread):
@@ -63,6 +64,7 @@ class NewspaperFetcherThread(BaseThread):
                                 self.logger.info(f"Deleting post {post_id} after {retry_count} failed attempts")
                                 try:
                                     delete_post(conn, post_id)
+                                    _update_stat(conn, 'posts_skipped')
                                     self.logger.info(f"Deleted post {post_id} and its associated text")
                                 except sqlite3.Error as e:
                                     self.logger.error(f"Database error while deleting post {post_id}: {e}")

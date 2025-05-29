@@ -4,7 +4,7 @@ import time
 from typing import List
 import praw
 from utils.domain_utils import compile_domain_patterns, is_domain_banned
-from infrastructure.database import insert_post
+from infrastructure.database import insert_post, mark_post_as_skipped
 from .base_thread import BaseThread
 
 class RedditFetchThread(BaseThread):
@@ -50,11 +50,15 @@ class RedditFetchThread(BaseThread):
                 # Skip if domain is banned
                 if self.is_domain_banned(submission.url):
                     self.logger.info(f"Skipping banned domain: {submission.url}")
+                    with self.db_lock:
+                        mark_post_as_skipped(conn)
                     continue
                 
                 # Skip if post is older than 1 day
                 if submission.created_utc < one_day_ago:
                     self.logger.info(f"Skipping old post: {submission.id} (created {submission.created_utc})")
+                    with self.db_lock:
+                        mark_post_as_skipped(conn)
                     continue
                     
                 # Insert post if it doesn't exist

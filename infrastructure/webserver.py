@@ -59,6 +59,16 @@ def get_stats_from_db() -> Dict[str, int]:
         """)
         stats['remaining_to_post'] = cursor.fetchone()[0]
         
+        # Calculate skipped posts (posts that were fetched but not processed)
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM posts 
+            WHERE fetched_at_utc IS NOT NULL 
+            AND processed_at_utc IS NULL 
+            AND retry_count >= 3
+        """)
+        stats['remaining_skipped'] = cursor.fetchone()[0]
+        
         return stats
 
 def update_cache():

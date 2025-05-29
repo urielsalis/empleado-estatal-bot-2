@@ -159,6 +159,7 @@ def init_db() -> str:
                 ('content_fetched', 0),
                 ('posts_processed', 0),
                 ('posts_posted', 0),
+                ('posts_skipped', 0),
                 ('oldest_post', 0),
                 ('newest_post', 0)
             ]
@@ -367,4 +368,14 @@ def mark_post_as_posted(conn: sqlite3.Connection, post_id: int) -> None:
         conn.commit()
     except sqlite3.Error as e:
         logger.error(f"Failed to mark post {post_id} as posted: {e}")
+        raise
+
+@retry_on_locked()
+def mark_post_as_skipped(conn: sqlite3.Connection) -> None:
+    """Increment the posts_skipped stat."""
+    try:
+        _update_stat(conn, 'posts_skipped')
+        conn.commit()
+    except sqlite3.Error as e:
+        logger.error(f"Failed to increment posts_skipped stat: {e}")
         raise 

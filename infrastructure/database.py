@@ -99,6 +99,7 @@ def cleanup_old_posts(conn: sqlite3.Connection) -> None:
             COMMIT;
         """)
         
+        conn.commit()
         deleted_count = cursor.rowcount
         if deleted_count > 0:
             logger.info(f"Cleaned up {deleted_count} old posts and their associated texts")
@@ -186,6 +187,7 @@ def _update_stat(conn: sqlite3.Connection, stat_name: str, increment: int = 1) -
             last_updated_utc = ?
         WHERE stat_name = ?
     """, (increment, _get_current_time(), stat_name))
+    conn.commit()
 
 @retry_on_locked()
 def insert_post(conn: sqlite3.Connection, reddit_id: str, subreddit: str, url: str, created_utc: int) -> None:
@@ -258,6 +260,7 @@ def mark_post_as_fetched(conn: sqlite3.Connection, post_id: int, html_content: s
         
         # Update stats after successful transaction
         _update_stat(conn, 'posts_fetched')
+        conn.commit()
     except sqlite3.Error as e:
         logger.error(f"Failed to mark post {post_id} as fetched: {e}")
         raise
@@ -272,6 +275,7 @@ def increment_retry_and_schedule(conn: sqlite3.Connection, post_id: int, retry_t
         WHERE id = ?
         RETURNING retry_count
     """, (retry_time, post_id))
+    conn.commit()
     return cursor.fetchone()[0]
 
 def delete_post(conn: sqlite3.Connection, post_id: int) -> None:
@@ -285,6 +289,7 @@ def delete_post(conn: sqlite3.Connection, post_id: int) -> None:
         
         COMMIT;
     """)
+    conn.commit()
 
 def get_posts_to_process(conn: sqlite3.Connection, limit: int = 10) -> list[tuple[int, str]]:
     """Get posts that have been fetched but not processed."""
@@ -325,7 +330,7 @@ def mark_post_as_processed(conn: sqlite3.Connection, post_id: int, processed_tex
         
         # Update stats after successful transaction
         _update_stat(conn, 'posts_processed')
-        
+        conn.commit()
     except sqlite3.Error as e:
         logger.error(f"Database error while marking post {post_id} as processed: {e}")
         raise
@@ -359,6 +364,7 @@ def mark_post_as_posted(conn: sqlite3.Connection, post_id: int) -> None:
         
         # Update stats after successful update
         _update_stat(conn, 'posts_posted')
+        conn.commit()
     except sqlite3.Error as e:
         logger.error(f"Failed to mark post {post_id} as posted: {e}")
         raise 

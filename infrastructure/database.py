@@ -3,16 +3,10 @@ import sqlite3
 from pathlib import Path
 import logging
 import time
-import threading
 from contextlib import contextmanager
 from typing import Generator
 
 logger = logging.getLogger(__name__)
-
-# Global connection pool
-_connection_pool = []
-_pool_lock = threading.Lock()
-MAX_CONNECTIONS = 10
 
 def _get_current_time() -> int:
     """Helper function to get current UTC timestamp."""
@@ -20,34 +14,21 @@ def _get_current_time() -> int:
 
 @contextmanager
 def get_db_connection(db_path: str) -> Generator[sqlite3.Connection, None, None]:
-    """Get a database connection from the pool with proper settings for thread safety."""
+    """Get a database connection with proper settings for thread safety."""
     conn = None
     try:
-        with _pool_lock:
-            if _connection_pool:
-                conn = _connection_pool.pop()
-            else:
-                conn = sqlite3.connect(db_path, timeout=30.0)  # 30 second timeout
-                conn.execute("PRAGMA journal_mode=WAL")  # Enable Write-Ahead Logging
-                conn.execute("PRAGMA busy_timeout=30000")  # 30 second busy timeout
-                conn.execute("PRAGMA synchronous=NORMAL")  # Slightly faster writes
-                conn.execute("PRAGMA cache_size=-2000")  # Use 2MB of memory for cache
-        
+        conn = sqlite3.connect(db_path, timeout=30.0)  # 30 second timeout
+        conn.execute("PRAGMA journal_mode=WAL")  # Enable Write-Ahead Logging
+        conn.execute("PRAGMA busy_timeout=30000")  # 30 second busy timeout
+        conn.execute("PRAGMA synchronous=NORMAL")  # Slightly faster writes
+        conn.execute("PRAGMA cache_size=-2000")  # Use 2MB of memory for cache
         yield conn
     finally:
         if conn:
             try:
-                with _pool_lock:
-                    if len(_connection_pool) < MAX_CONNECTIONS:
-                        _connection_pool.append(conn)
-                    else:
-                        conn.close()
+                conn.close()
             except Exception as e:
-                logger.error(f"Error returning connection to pool: {e}")
-                try:
-                    conn.close()
-                except Exception as e:
-                    logger.error(f"Error closing connection: {e}")
+                logger.error(f"Error closing connection: {e}")
 
 def retry_on_locked(max_retries: int = 3, delay: float = 1.0):
     """Decorator to retry database operations that might fail due to locks."""

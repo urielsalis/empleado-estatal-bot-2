@@ -27,7 +27,7 @@ class RedditFetchThread(BaseThread):
         """Check if a URL's domain is in the banned list."""
         return is_domain_banned(url, self.banned_patterns)
 
-    def process_cycle(self):
+    def process_cycle(self, conn):
         """Process new submissions from Reddit."""
         
         # Join subreddits with + for multi-subreddit stream
@@ -61,7 +61,7 @@ class RedditFetchThread(BaseThread):
                 with self.db_lock:
                     self.logger.info(f"Inserting post: {submission.id}")
                     insert_post(
-                        self.conn,
+                        conn,
                         reddit_id=submission.id,
                         subreddit=submission.subreddit.display_name,
                         url=submission.url,

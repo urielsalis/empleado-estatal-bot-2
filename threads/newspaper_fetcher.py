@@ -37,6 +37,7 @@ class NewspaperFetcherThread(BaseThread):
                         # Store the raw text
                         raw_text = response.text
                         mark_post_as_fetched(post_id, raw_text)
+                        self.logger.info(f"Fetched {len(raw_text)} characters from {url}")
                         
                         
                     except Exception as e:

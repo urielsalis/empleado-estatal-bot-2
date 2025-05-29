@@ -219,6 +219,17 @@ def insert_post(reddit_id: str, subreddit: str, url: str, created_utc: int) -> N
                     AND id = last_insert_rowid()
                 );
                 
+                -- Update posts_fetched stat when a new post is inserted
+                UPDATE post_stats 
+                SET stat_value = stat_value + 1,
+                    last_updated_utc = {current_time}
+                WHERE stat_name = 'posts_fetched'
+                AND EXISTS (
+                    SELECT 1 FROM posts 
+                    WHERE reddit_id = '{reddit_id}' 
+                    AND id = last_insert_rowid()
+                );
+                
                 -- Update oldest/newest post if needed
                 UPDATE post_stats 
                 SET stat_value = CASE 
@@ -272,11 +283,11 @@ def mark_post_as_fetched(post_id: int, html_content: str) -> None:
                     fetch_at_utc = NULL
                 WHERE id = {post_id};
                 
-                -- Update stats
+                -- Update content_fetched stat
                 UPDATE post_stats 
                 SET stat_value = stat_value + 1,
                     last_updated_utc = {current_time}
-                WHERE stat_name = 'posts_fetched';
+                WHERE stat_name = 'content_fetched';
                 
                 COMMIT;
             """)

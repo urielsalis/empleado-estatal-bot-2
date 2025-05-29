@@ -25,7 +25,7 @@ class NewspaperFetcherThread(BaseThread):
                         # Fetch the article
                         self.logger.info(f"Fetching article from {url}")
 
-                        response = requests.get(url, impersonate="chrome110")
+                        response = requests.get(url, impersonate="chrome", timeout=10)
                         if response.status_code != 200:
                             self.logger.error(f"Failed to fetch {url}: {response.status_code}")
                             # Calculate retry time: 5 minutes * (2 ^ retry_count)

@@ -201,48 +201,53 @@ def insert_post(reddit_id: str, subreddit: str, url: str, created_utc: int) -> N
         
         try:
             # Insert the post and update stats in a single transaction
-            cursor.executescript(f"""
-                BEGIN TRANSACTION;
-                
-                -- Insert the post
+            cursor.execute("BEGIN TRANSACTION")
+            
+            # Insert the post
+            cursor.execute("""
                 INSERT OR IGNORE INTO posts (reddit_id, subreddit, url, created_utc, fetch_at_utc) 
-                VALUES ('{reddit_id}', '{subreddit}', '{url}', {created_utc}, {current_time});
-                
-                -- If a new post was inserted, update stats
+                VALUES (?, ?, ?, ?, ?)
+            """, (reddit_id, subreddit, url, created_utc, current_time))
+            
+            # If a new post was inserted, update stats
+            cursor.execute("""
                 UPDATE post_stats 
                 SET stat_value = stat_value + 1,
-                    last_updated_utc = {current_time}
+                    last_updated_utc = ?
                 WHERE stat_name = 'total_posts'
                 AND EXISTS (
                     SELECT 1 FROM posts 
-                    WHERE reddit_id = '{reddit_id}' 
+                    WHERE reddit_id = ? 
                     AND id = last_insert_rowid()
-                );
-                
-                -- Update posts_fetched stat when a new post is inserted
+                )
+            """, (current_time, reddit_id))
+            
+            # Update posts_fetched stat when a new post is inserted
+            cursor.execute("""
                 UPDATE post_stats 
                 SET stat_value = stat_value + 1,
-                    last_updated_utc = {current_time}
+                    last_updated_utc = ?
                 WHERE stat_name = 'posts_fetched'
                 AND EXISTS (
                     SELECT 1 FROM posts 
-                    WHERE reddit_id = '{reddit_id}' 
+                    WHERE reddit_id = ? 
                     AND id = last_insert_rowid()
-                );
-                
-                -- Update oldest/newest post if needed
+                )
+            """, (current_time, reddit_id))
+            
+            # Update oldest/newest post if needed
+            cursor.execute("""
                 UPDATE post_stats 
                 SET stat_value = CASE 
-                    WHEN stat_name = 'oldest_post' AND (stat_value = 0 OR stat_value > {created_utc}) THEN {created_utc}
-                    WHEN stat_name = 'newest_post' AND (stat_value = 0 OR stat_value < {created_utc}) THEN {created_utc}
+                    WHEN stat_name = 'oldest_post' AND (stat_value = 0 OR stat_value > ?) THEN ?
+                    WHEN stat_name = 'newest_post' AND (stat_value = 0 OR stat_value < ?) THEN ?
                     ELSE stat_value 
                 END,
-                last_updated_utc = {current_time}
-                WHERE stat_name IN ('oldest_post', 'newest_post');
-                
-                COMMIT;
-            """)
+                last_updated_utc = ?
+                WHERE stat_name IN ('oldest_post', 'newest_post')
+            """, (created_utc, created_utc, created_utc, created_utc, current_time))
             
+            cursor.execute("COMMIT")
             conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Failed to insert post: {e}")
@@ -270,28 +275,31 @@ def mark_post_as_fetched(post_id: int, html_content: str) -> None:
         
         try:
             # Store the raw HTML, update post status, and increment counter in a single transaction
-            cursor.executescript(f"""
-                BEGIN TRANSACTION;
-                
-                -- Store the raw HTML
+            cursor.execute("BEGIN TRANSACTION")
+            
+            # Store the raw HTML
+            cursor.execute("""
                 INSERT INTO texts (post_id, raw_text)
-                VALUES ({post_id}, '{html_content.replace("'", "''")}');
-                
-                -- Update the post's fetched timestamp
+                VALUES (?, ?)
+            """, (post_id, html_content))
+            
+            # Update the post's fetched timestamp
+            cursor.execute("""
                 UPDATE posts 
-                SET fetched_at_utc = {current_time},
+                SET fetched_at_utc = ?,
                     fetch_at_utc = NULL
-                WHERE id = {post_id};
-                
-                -- Update content_fetched stat
+                WHERE id = ?
+            """, (current_time, post_id))
+            
+            # Update content_fetched stat
+            cursor.execute("""
                 UPDATE post_stats 
                 SET stat_value = stat_value + 1,
-                    last_updated_utc = {current_time}
-                WHERE stat_name = 'content_fetched';
-                
-                COMMIT;
-            """)
+                    last_updated_utc = ?
+                WHERE stat_name = 'content_fetched'
+            """, (current_time,))
             
+            cursor.execute("COMMIT")
             conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Failed to mark post {post_id} as fetched: {e}")
@@ -317,15 +325,17 @@ def delete_post(post_id: int) -> None:
     conn = get_db_connection()
     with _write_rlock:
         cursor = conn.cursor()
-        cursor.executescript(f"""
-            BEGIN TRANSACTION;
+        try:
+            cursor.execute("BEGIN TRANSACTION")
             
-            DELETE FROM texts WHERE post_id = {post_id};
-            DELETE FROM posts WHERE id = {post_id};
+            cursor.execute("DELETE FROM texts WHERE post_id = ?", (post_id,))
+            cursor.execute("DELETE FROM posts WHERE id = ?", (post_id,))
             
-            COMMIT;
-        """)
-        conn.commit()
+            cursor.execute("COMMIT")
+            conn.commit()
+        except sqlite3.Error as e:
+            logger.error(f"Failed to delete post {post_id}: {e}")
+            raise
 
 def get_posts_to_process(limit: int = 10) -> list[tuple[int, str]]:
     """Get posts that have been fetched but not processed."""
@@ -350,28 +360,31 @@ def mark_post_as_processed(post_id: int, processed_text: str) -> None:
         
         try:
             # Store the processed text and update post status in a single transaction
-            cursor.executescript(f"""
-                BEGIN TRANSACTION;
-                
-                -- Update the text
+            cursor.execute("BEGIN TRANSACTION")
+            
+            # Update the text
+            cursor.execute("""
                 UPDATE texts 
-                SET text = '{processed_text.replace("'", "''")}'
-                WHERE post_id = {post_id};
-                
-                -- Update the post's processed timestamp
+                SET text = ?
+                WHERE post_id = ?
+            """, (processed_text, post_id))
+            
+            # Update the post's processed timestamp
+            cursor.execute("""
                 UPDATE posts 
-                SET processed_at_utc = {current_time}
-                WHERE id = {post_id};
-                
-                -- Update stats
+                SET processed_at_utc = ?
+                WHERE id = ?
+            """, (current_time, post_id))
+            
+            # Update stats
+            cursor.execute("""
                 UPDATE post_stats 
                 SET stat_value = stat_value + 1,
-                    last_updated_utc = {current_time}
-                WHERE stat_name = 'posts_processed';
-                
-                COMMIT;
-            """)
+                    last_updated_utc = ?
+                WHERE stat_name = 'posts_processed'
+            """, (current_time,))
             
+            cursor.execute("COMMIT")
             conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Database error while marking post {post_id} as processed: {e}")
@@ -400,23 +413,24 @@ def mark_post_as_posted(post_id: int) -> None:
         cursor = conn.cursor()
         
         try:
-            cursor.executescript(f"""
-                BEGIN TRANSACTION;
-                
-                -- Update the post's posted timestamp
+            cursor.execute("BEGIN TRANSACTION")
+            
+            # Update the post's posted timestamp
+            cursor.execute("""
                 UPDATE posts 
-                SET posted_at_utc = {current_time}
-                WHERE id = {post_id};
-                
-                -- Update stats
+                SET posted_at_utc = ?
+                WHERE id = ?
+            """, (current_time, post_id))
+            
+            # Update stats
+            cursor.execute("""
                 UPDATE post_stats 
                 SET stat_value = stat_value + 1,
-                    last_updated_utc = {current_time}
-                WHERE stat_name = 'posts_posted';
-                
-                COMMIT;
-            """)
+                    last_updated_utc = ?
+                WHERE stat_name = 'posts_posted'
+            """, (current_time,))
             
+            cursor.execute("COMMIT")
             conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Failed to mark post {post_id} as posted: {e}")

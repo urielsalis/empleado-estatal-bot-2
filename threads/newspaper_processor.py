@@ -22,7 +22,7 @@ class NewspaperProcessorThread(BaseThread):
                 for post_id, raw_text in posts:
                     try:
                         # Process the article text
-                        self.logger.info(f"Processing post {post_id} with signature: {self.signature}")
+                        self.logger.info(f"Processing post {post_id}")
                         processed_text = extract_article_text(raw_text, self.signature)
                         
                         if processed_text:

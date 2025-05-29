@@ -4,6 +4,7 @@ from typing import Optional
 from readabilipy import simple_json_from_html_string
 from markdownify import markdownify as html2md
 import bs4
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,82 @@ IMAGE_MARKDOWN_REGEX = re.compile(r'!\[([^\]]+)\]\(([^)]+)\)')
 # Match URLs in markdown links
 URL_REGEX = re.compile(r'\[([^\]]+)\]\((https?://[^)]+)\)')
 
+def get_base_url(html_content: str, article_url: Optional[str] = None) -> Optional[str]:
+    """
+    Extract the base URL from HTML content or use the provided article URL.
+    Returns None if no valid URL can be determined.
+    """
+    if article_url:
+        return article_url
+    
+    soup = bs4.BeautifulSoup(html_content, "html.parser")
+    
+    # Try to get canonical URL
+    canonical = soup.find("link", rel="canonical")
+    if canonical and canonical.get("href"):
+        return canonical["href"]
+    
+    # Try to get og:url
+    og_url = soup.find("meta", property="og:url")
+    if og_url and og_url.get("content"):
+        return og_url["content"]
+    
+    return None
+
+def is_same_domain(url1: str, url2: str) -> bool:
+    """Check if two URLs belong to the same domain."""
+    try:
+        parsed1 = urlparse(url1)
+        parsed2 = urlparse(url2)
+        # Compare netloc without port
+        domain1 = parsed1.netloc.split(':')[0]
+        domain2 = parsed2.netloc.split(':')[0]
+        return domain1 == domain2
+    except Exception:
+        return False
+
+def convert_relative_urls(html_content: str, base_url: Optional[str]) -> str:
+    """
+    Convert all relative URLs in HTML content to absolute URLs.
+    Returns the modified HTML content.
+    """
+    if not base_url:
+        return html_content
+    
+    soup = bs4.BeautifulSoup(html_content, "html.parser")
+    base_url_parsed = urlparse(base_url)
+    base_path = base_url_parsed.path.rstrip('/')
+    
+    # Process all <a> tags
+    for a_tag in soup.find_all("a", href=True):
+        href = a_tag["href"]
+        # Skip if already absolute URL
+        if href.startswith(("http://", "https://")):
+            continue
+        # Convert relative URL to absolute
+        if href.startswith('/'):
+            # Path-absolute URL
+            a_tag["href"] = f"{base_url_parsed.scheme}://{base_url_parsed.netloc}{href}"
+        else:
+            # Path-relative URL
+            a_tag["href"] = f"{base_url_parsed.scheme}://{base_url_parsed.netloc}{base_path}/{href}"
+    
+    # Process all <img> tags
+    for img_tag in soup.find_all("img", src=True):
+        src = img_tag["src"]
+        # Skip if already absolute URL
+        if src.startswith(("http://", "https://")):
+            continue
+        # Convert relative URL to absolute
+        if src.startswith('/'):
+            # Path-absolute URL
+            img_tag["src"] = f"{base_url_parsed.scheme}://{base_url_parsed.netloc}{src}"
+        else:
+            # Path-relative URL
+            img_tag["src"] = f"{base_url_parsed.scheme}://{base_url_parsed.netloc}{base_path}/{src}"
+    
+    return str(soup)
+
 def replace_ru_domains(text: str) -> str:
     """Replace any .ru domain links with example.com."""
     def replace_url(match):
@@ -31,12 +108,17 @@ def replace_ru_domains(text: str) -> str:
     
     return URL_REGEX.sub(replace_url, text)
 
-def extract_article_text(html_content: str, signature: str) -> Optional[str]:
+def extract_article_text(html_content: str, signature: str, article_url: Optional[str] = None) -> Optional[str]:
     """
     Extract the main article text from raw HTML content, sanitize, convert to Markdown, and sign it.
     Returns a Markdown string. The signature parameter is required and will be appended as HTML before Markdown conversion.
     """
     try:
+        # Get base URL and convert relative URLs
+        base_url = get_base_url(html_content, article_url)
+        if base_url:
+            html_content = convert_relative_urls(html_content, base_url)
+        
         # Use readabilipy to extract the main content
         try:
             article = simple_json_from_html_string(html_content, use_readability=True)

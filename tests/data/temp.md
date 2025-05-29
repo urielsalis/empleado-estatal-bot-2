@@ -74,9 +74,9 @@
 >   
 > Para finalizar, el texto publicado en el Boletín Oficial señala que se **elimina la habilitación especial de casas rodantes y se autoriza la libre homologación de trailers, acoplados y remolques.** Además, “se adecuán condiciones de seguridad en general y en cascos de motociclistas en particular, para adaptarlas a estándares internacionales, promoviendo una circulación más segura”. **“Nación dictamina una lógica de gestión y las jurisdicciones eligen si adhieren más o menos**”, completaron fuentes oficiales.
 >   
-> * Autos 0km
-> * VTV
-> * Licencia de conducir
+> * [Autos 0km](https://www.lanacion.com.ar/tema/autos-0km/ "Autos 0km")
+> * [VTV](https://www.lanacion.com.ar/tema/vtv/ "VTV")
+> * [Licencia de conducir](https://www.lanacion.com.ar/tema/licencia-de-conducir/ "Licencia de conducir")
 > - - - - - -
 
 

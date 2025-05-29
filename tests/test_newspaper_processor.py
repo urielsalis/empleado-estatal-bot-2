@@ -1,6 +1,12 @@
 import os
 import sys
-from utils.newspaper_processor import extract_article_text, replace_ru_domains
+from utils.newspaper_processor import (
+    extract_article_text, 
+    replace_ru_domains,
+    get_base_url,
+    is_same_domain,
+    convert_relative_urls
+)
 
 # Add project root to Python path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -207,3 +213,137 @@ def test_signature_with_ru_links():
     result = extract_article_text(html, signature=signature)
     assert "[RU Link](https://example.com)" in result
     assert "[COM Link](https://site.com/path)" in result
+
+
+def test_get_base_url():
+    """Test extracting base URL from HTML content."""
+    # Test with canonical URL
+    html = """
+    <html>
+        <head>
+            <link rel="canonical" href="https://example.com/article">
+        </head>
+    </html>
+    """
+    assert get_base_url(html) == "https://example.com/article"
+
+    # Test with og:url
+    html = """
+    <html>
+        <head>
+            <meta property="og:url" content="https://example.com/og-article">
+        </head>
+    </html>
+    """
+    assert get_base_url(html) == "https://example.com/og-article"
+
+    # Test with provided article_url
+    html = "<html></html>"
+    assert get_base_url(html, "https://example.com/provided") == "https://example.com/provided"
+
+    # Test with no URL available
+    html = "<html></html>"
+    assert get_base_url(html) is None
+
+
+def test_is_same_domain():
+    """Test domain comparison functionality."""
+    assert is_same_domain("https://example.com/path", "https://example.com/other") is True
+    assert is_same_domain("https://example.com/path", "https://sub.example.com/path") is False
+    assert is_same_domain("https://example.com/path", "https://example.org/path") is False
+    assert is_same_domain("https://example.com/path", "http://example.com/path") is True
+    assert is_same_domain("https://example.com:8080/path", "https://example.com/path") is True
+
+
+def test_convert_relative_urls():
+    """Test conversion of relative URLs to absolute URLs."""
+    base_url = "https://example.com/article"
+    
+    # Test path-absolute URLs
+    html = """
+    <html>
+        <body>
+            <a href="/path/to/page">Link</a>
+            <img src="/images/photo.jpg" alt="Photo">
+        </body>
+    </html>
+    """
+    result = convert_relative_urls(html, base_url)
+    assert 'href="https://example.com/path/to/page"' in result
+    assert 'src="https://example.com/images/photo.jpg"' in result
+
+    # Test path-relative URLs
+    html = """
+    <html>
+        <body>
+            <a href="relative/page">Link</a>
+            <img src="images/photo.jpg" alt="Photo">
+        </body>
+    </html>
+    """
+    result = convert_relative_urls(html, base_url)
+    assert 'href="https://example.com/article/relative/page"' in result
+    assert 'src="https://example.com/article/images/photo.jpg"' in result
+
+    # Test with no base URL
+    html = '<a href="/path">Link</a>'
+    assert convert_relative_urls(html, None) == html
+
+    # Test with already absolute URLs
+    html = """
+    <html>
+        <body>
+            <a href="https://other.com/path">Link</a>
+            <img src="https://other.com/image.jpg" alt="Photo">
+        </body>
+    </html>
+    """
+    result = convert_relative_urls(html, base_url)
+    assert 'href="https://other.com/path"' in result
+    assert 'src="https://other.com/image.jpg"' in result
+
+
+def test_article_with_relative_urls():
+    """Test processing an article with relative URLs."""
+    html = """
+    <html>
+        <head>
+            <link rel="canonical" href="https://example.com/article">
+        </head>
+        <body>
+            <article>
+                <h1>Relative URLs Test</h1>
+                <p>Here is a <a href="/path/to/page">path-absolute link</a>.</p>
+                <p>Here is a <a href="relative/page">path-relative link</a>.</p>
+                <img src="/images/photo.jpg" alt="Photo">
+                <img src="images/other.jpg" alt="Other">
+            </article>
+        </body>
+    </html>
+    """
+    result = extract_article_text(html, signature=TEST_SIGNATURE)
+    assert "> Here is a [path-absolute link](https://example.com/path/to/page)." in result
+    assert "> Here is a [path-relative link](https://example.com/article/relative/page)." in result
+    assert "[Photo](https://example.com/images/photo.jpg)" in result
+    assert "[Other](https://example.com/article/images/other.jpg)" in result
+
+
+def test_article_with_domain_redirect():
+    """Test processing an article where the domain has changed due to redirect."""
+    html = """
+    <html>
+        <head>
+            <link rel="canonical" href="https://redirected.com/article">
+        </head>
+        <body>
+            <article>
+                <h1>Redirect Test</h1>
+                <p>Here is a <a href="/path/to/page">link</a>.</p>
+                <img src="/images/photo.jpg" alt="Photo">
+            </article>
+        </body>
+    </html>
+    """
+    result = extract_article_text(html, signature=TEST_SIGNATURE)
+    assert "> Here is a [link](https://redirected.com/path/to/page)." in result
+    assert "[Photo](https://redirected.com/images/photo.jpg)" in result

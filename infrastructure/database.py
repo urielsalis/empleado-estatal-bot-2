@@ -143,22 +143,26 @@ def cleanup_old_posts() -> None:
             cursor = conn.cursor()
             
             # Delete old posts and their associated texts in a single transaction
-            cursor.executescript(f"""
-                BEGIN TRANSACTION;
-                
-                -- Delete old posted entries and their texts
+            cursor.execute("BEGIN TRANSACTION")
+            
+            # Delete old posted entries and their texts
+            cursor.execute("""
                 DELETE FROM texts 
                 WHERE post_id IN (
                     SELECT id FROM posts 
                     WHERE posted_at_utc IS NOT NULL 
-                    AND posted_at_utc < {one_day_ago}
-                );
-                
+                    AND posted_at_utc < ?
+                )
+            """, (one_day_ago,))
+            
+            cursor.execute("""
                 DELETE FROM posts 
                 WHERE posted_at_utc IS NOT NULL 
-                AND posted_at_utc < {one_day_ago};
-                
-                -- Delete posts with no text content and their texts
+                AND posted_at_utc < ?
+            """, (one_day_ago,))
+            
+            # Delete posts with no text content and their texts
+            cursor.execute("""
                 DELETE FROM texts 
                 WHERE post_id IN (
                     SELECT id FROM posts 
@@ -169,8 +173,10 @@ def cleanup_old_posts() -> None:
                         FROM texts 
                         WHERE text IS NULL
                     )
-                );
-                
+                )
+            """)
+            
+            cursor.execute("""
                 DELETE FROM posts 
                 WHERE fetched_at_utc IS NOT NULL 
                 AND processed_at_utc IS NULL 
@@ -178,12 +184,12 @@ def cleanup_old_posts() -> None:
                     SELECT post_id 
                     FROM texts 
                     WHERE text IS NULL
-                );
-                
-                COMMIT;
+                )
             """)
             
+            cursor.execute("COMMIT")
             conn.commit()
+            
             deleted_count = cursor.rowcount
             if deleted_count > 0:
                 logger.info(f"Cleaned up {deleted_count} old posts and their associated texts")

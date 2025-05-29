@@ -8,7 +8,7 @@ import threading
 from pathlib import Path
 import logging
 
-from infrastructure.database import get_db_connection, close_db_connection
+from infrastructure.database import get_db_connection
 
 app = FastAPI(title="Bot Stats Dashboard")
 templates = Jinja2Templates(directory="templates")
@@ -26,53 +26,50 @@ def get_stats_from_db() -> Dict[str, int]:
     if not db_path.exists():
         return {}
     
-    conn = get_db_connection(str(db_path))
-    try:
-        cursor = conn.cursor()
-        
-        # Get basic stats
-        cursor.execute("SELECT stat_name, stat_value FROM post_stats")
-        stats = dict(cursor.fetchall())
-        
-        # Get remaining posts to fetch
-        cursor.execute("""
-            SELECT COUNT(*) 
-            FROM posts 
-            WHERE fetched_at_utc IS NULL
-        """)
-        stats['remaining_to_fetch'] = cursor.fetchone()[0]
-        
-        # Calculate remaining posts to process
-        cursor.execute("""
-            SELECT COUNT(*) 
-            FROM posts 
-            WHERE fetched_at_utc IS NOT NULL 
-            AND processed_at_utc IS NULL
-        """)
-        stats['remaining_to_process'] = cursor.fetchone()[0]
-        
-        # Calculate remaining posts to post
-        cursor.execute("""
-            SELECT COUNT(*) 
-            FROM posts 
-            WHERE processed_at_utc IS NOT NULL 
-            AND posted_at_utc IS NULL
-        """)
-        stats['remaining_to_post'] = cursor.fetchone()[0]
-        
-        # Calculate skipped posts (posts that were fetched but not processed)
-        cursor.execute("""
-            SELECT COUNT(*) 
-            FROM posts 
-            WHERE fetched_at_utc IS NOT NULL 
-            AND processed_at_utc IS NULL 
-            AND retry_count >= 3
-        """)
-        stats['remaining_skipped'] = cursor.fetchone()[0]
-        
-        return stats
-    finally:
-        close_db_connection()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Get basic stats
+    cursor.execute("SELECT stat_name, stat_value FROM post_stats")
+    stats = dict(cursor.fetchall())
+    
+    # Get remaining posts to fetch
+    cursor.execute("""
+        SELECT COUNT(*) 
+        FROM posts 
+        WHERE fetched_at_utc IS NULL
+    """)
+    stats['remaining_to_fetch'] = cursor.fetchone()[0]
+    
+    # Calculate remaining posts to process
+    cursor.execute("""
+        SELECT COUNT(*) 
+        FROM posts 
+        WHERE fetched_at_utc IS NOT NULL 
+        AND processed_at_utc IS NULL
+    """)
+    stats['remaining_to_process'] = cursor.fetchone()[0]
+    
+    # Calculate remaining posts to post
+    cursor.execute("""
+        SELECT COUNT(*) 
+        FROM posts 
+        WHERE processed_at_utc IS NOT NULL 
+        AND posted_at_utc IS NULL
+    """)
+    stats['remaining_to_post'] = cursor.fetchone()[0]
+    
+    # Calculate skipped posts (posts that were fetched but not processed)
+    cursor.execute("""
+        SELECT COUNT(*) 
+        FROM posts 
+        WHERE fetched_at_utc IS NOT NULL 
+        AND processed_at_utc IS NULL 
+        AND retry_count >= 3
+    """)
+    stats['remaining_skipped'] = cursor.fetchone()[0]
+    
+    return stats
 
 def update_cache():
     """Update the stats cache periodically."""

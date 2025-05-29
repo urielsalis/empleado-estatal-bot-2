@@ -128,6 +128,7 @@ def init_db() -> str:
         default_stats = [
             ('total_posts', 0),
             ('posts_fetched', 0),
+            ('content_fetched', 0),
             ('posts_processed', 0),
             ('posts_posted', 0),
             ('oldest_post', 0),

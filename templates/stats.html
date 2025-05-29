@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Stats Dashboard</title>
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --primary-hover: #1d4ed8;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --border-color: #e2e8f0;
+            --success-color: #22c55e;
+            --warning-color: #eab308;
+            --error-color: #ef4444;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 2rem 1rem;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background-color: var(--card-bg);
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 2.5rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        h1 {
+            color: var(--text-primary);
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1rem;
+        }
+
+        .github-link {
+            display: inline-flex;
+            align-items: center;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.875rem;
+            margin-top: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            background-color: var(--bg-color);
+            transition: all 0.2s ease;
+        }
+
+        .github-link:hover {
+            background-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .github-link::before {
+            content: '🐙';
+            margin-right: 0.5rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .total-posts {
+            max-width: 300px;
+            margin: 0 auto 2rem;
+        }
+
+        .total-posts .stat-value {
+            font-size: 2.5rem;
+        }
+
+        .total-posts .stat-card::before {
+            background-color: var(--success-color);
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .stat-card {
+            background-color: var(--card-bg);
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            border: 1px solid var(--border-color);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background-color: var(--primary-color);
+            opacity: 0.8;
+        }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            color: var(--text-primary);
+            font-size: 1.75rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        .timestamp-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .timestamp-card {
+            background-color: var(--card-bg);
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            border: 1px solid var(--border-color);
+            transition: all 0.3s ease;
+        }
+
+        .timestamp-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+
+        .last-update {
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            padding-top: 1.5rem;
+            border-top: 2px solid var(--border-color);
+            margin-top: 2rem;
+        }
+
+        .last-update::before {
+            content: '🕒';
+            margin-right: 0.5rem;
+        }
+
+        @media (max-width: 640px) {
+            .container {
+                padding: 1rem;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .timestamp-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            h1 {
+                font-size: 1.5rem;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .metrics-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Empleado Estatal Bot</h1>
+            <div class="subtitle">Real-time monitoring of bot activity</div>
+            <a href="https://github.com/urielsalis/empleado-estatal-bot-2" class="github-link" target="_blank" rel="noopener noreferrer">
+                View Source Code
+            </a>
+        </div>
+        
+        <div class="metrics-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total Posts</div>
+                <div class="stat-value">{{ stats.get('total_posts', 0) }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Remaining to Fetch</div>
+                <div class="stat-value">{{ stats.get('remaining_to_fetch_content', 0) }}</div>
+            </div>
+        </div>
+
+        <div class="metrics-grid">
+            <div class="stat-card">
+                <div class="stat-label">Content Fetched</div>
+                <div class="stat-value">{{ stats.get('content_fetched', 0) }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Remaining to Fetch</div>
+                <div class="stat-value">{{ stats.get('remaining_to_fetch', 0) }}</div>
+            </div>
+        </div>
+
+        <div class="metrics-grid">
+            <div class="stat-card">
+                <div class="stat-label">Posts Processed</div>
+                <div class="stat-value">{{ stats.get('posts_processed', 0) }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Remaining to Process</div>
+                <div class="stat-value">{{ stats.get('remaining_to_process', 0) }}</div>
+            </div>
+        </div>
+
+        <div class="metrics-grid">
+            <div class="stat-card">
+                <div class="stat-label">Comments Posted</div>
+                <div class="stat-value">{{ stats.get('posts_posted', 0) }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Remaining to Post</div>
+                <div class="stat-value">{{ stats.get('remaining_to_post', 0) }}</div>
+            </div>
+        </div>
+
+        <div class="timestamp-grid">
+            <div class="timestamp-card">
+                <div class="stat-label">Oldest Post</div>
+                <div class="stat-value">{{ stats.get('oldest_post', 'N/A') }}</div>
+            </div>
+            <div class="timestamp-card">
+                <div class="stat-label">Newest Post</div>
+                <div class="stat-value">{{ stats.get('newest_post', 'N/A') }}</div>
+            </div>
+        </div>
+
+        <div class="last-update">
+            Last updated: {{ last_update }}
+        </div>
+    </div>
+</body>
+</html> 

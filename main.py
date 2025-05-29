@@ -8,6 +8,7 @@ from logging.handlers import TimedRotatingFileHandler
 from infrastructure.config import load_config, get_monitored_subreddits, get_distinguished_subreddits
 from infrastructure.database import init_db
 from infrastructure.reddit import get_reddit_client, get_banned_domains
+from infrastructure.webserver import start_webserver
 from threads.reddit_fetch import RedditFetchThread
 from threads.reddit_post import RedditPostThread
 from threads.newspaper_processor import NewspaperProcessorThread
@@ -121,6 +122,14 @@ def main():
         # Set up signal handler for graceful shutdown
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
+        
+        # Start webserver in a separate thread
+        webserver_thread = threading.Thread(
+            target=start_webserver,
+            daemon=True
+        )
+        webserver_thread.start()
+        logger.info("Stats webserver started at http://127.0.0.1:8000")
         
         # Start threads
         logger.info("Starting worker threads...")

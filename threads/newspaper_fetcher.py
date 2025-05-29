@@ -37,6 +37,7 @@ class NewspaperFetcherThread(BaseThread):
                         raw_text = response.text
                         mark_post_as_fetched(post_id, raw_text)
                         
+                        
                     except Exception as e:
                         self.logger.error(f"Error processing {url}: {e}")
                         # Calculate retry time: 5 minutes * (2 ^ retry_count)

@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 # Thread-local storage for database connections
 _thread_local = threading.local()
 
-# Global lock for write operations
-_write_lock = threading.Lock()
+# Global reentrant lock for write operations
+_write_rlock = threading.RLock()
 
 # Global database path
 _db_path = None
@@ -33,7 +33,7 @@ def init_db() -> str:
     
     # Create tables if they don't exist
     conn = get_db_connection()
-    with _write_lock:
+    with _write_rlock:
         try:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS posts (
@@ -122,7 +122,7 @@ def close_db_connection() -> None:
 def _update_stat(stat_name: str, increment: int = 1) -> None:
     """Internal function to update a statistic."""
     conn = get_db_connection()
-    with _write_lock:
+    with _write_rlock:
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE post_stats 
@@ -135,7 +135,7 @@ def _update_stat(stat_name: str, increment: int = 1) -> None:
 def cleanup_old_posts() -> None:
     """Delete posts that were posted more than 1 day ago or have no text content."""
     conn = get_db_connection()
-    with _write_lock:
+    with _write_rlock:
         try:
             # Calculate timestamp for 1 day ago
             one_day_ago = _get_current_time() - (24 * 60 * 60)
@@ -195,31 +195,42 @@ def cleanup_old_posts() -> None:
 def insert_post(reddit_id: str, subreddit: str, url: str, created_utc: int) -> None:
     """Insert a new post if it doesn't exist."""
     conn = get_db_connection()
-    with _write_lock:
+    with _write_rlock:
+        current_time = _get_current_time()
         cursor = conn.cursor()
         
         try:
-            # Insert the post
-            cursor.execute(
-                "INSERT OR IGNORE INTO posts (reddit_id, subreddit, url, created_utc, fetch_at_utc) VALUES (?, ?, ?, ?, ?)",
-                (reddit_id, subreddit, url, created_utc, _get_current_time())
-            )
-            
-            # If a new post was inserted (rowcount > 0), update stats
-            if cursor.rowcount > 0:
-                _update_stat('total_posts')
+            # Insert the post and update stats in a single transaction
+            cursor.executescript(f"""
+                BEGIN TRANSACTION;
                 
-                # Update oldest/newest post if needed
-                cursor.execute("""
-                    UPDATE post_stats 
-                    SET stat_value = CASE 
-                        WHEN stat_name = 'oldest_post' AND (stat_value = 0 OR stat_value > ?) THEN ?
-                        WHEN stat_name = 'newest_post' AND (stat_value = 0 OR stat_value < ?) THEN ?
-                        ELSE stat_value 
-                    END,
-                    last_updated_utc = ?
-                    WHERE stat_name IN ('oldest_post', 'newest_post')
-                """, (created_utc, created_utc, created_utc, created_utc, _get_current_time()))
+                -- Insert the post
+                INSERT OR IGNORE INTO posts (reddit_id, subreddit, url, created_utc, fetch_at_utc) 
+                VALUES ('{reddit_id}', '{subreddit}', '{url}', {created_utc}, {current_time});
+                
+                -- If a new post was inserted, update stats
+                UPDATE post_stats 
+                SET stat_value = stat_value + 1,
+                    last_updated_utc = {current_time}
+                WHERE stat_name = 'total_posts'
+                AND EXISTS (
+                    SELECT 1 FROM posts 
+                    WHERE reddit_id = '{reddit_id}' 
+                    AND id = last_insert_rowid()
+                );
+                
+                -- Update oldest/newest post if needed
+                UPDATE post_stats 
+                SET stat_value = CASE 
+                    WHEN stat_name = 'oldest_post' AND (stat_value = 0 OR stat_value > {created_utc}) THEN {created_utc}
+                    WHEN stat_name = 'newest_post' AND (stat_value = 0 OR stat_value < {created_utc}) THEN {created_utc}
+                    ELSE stat_value 
+                END,
+                last_updated_utc = {current_time}
+                WHERE stat_name IN ('oldest_post', 'newest_post');
+                
+                COMMIT;
+            """)
             
             conn.commit()
         except sqlite3.Error as e:
@@ -242,7 +253,7 @@ def get_posts_to_fetch(limit: int = 10) -> list[tuple[int, str]]:
 def mark_post_as_fetched(post_id: int, html_content: str) -> None:
     """Mark a post as fetched and store its HTML content."""
     conn = get_db_connection()
-    with _write_lock:
+    with _write_rlock:
         current_time = _get_current_time()
         cursor = conn.cursor()
         
@@ -261,11 +272,15 @@ def mark_post_as_fetched(post_id: int, html_content: str) -> None:
                     fetch_at_utc = NULL
                 WHERE id = {post_id};
                 
+                -- Update stats
+                UPDATE post_stats 
+                SET stat_value = stat_value + 1,
+                    last_updated_utc = {current_time}
+                WHERE stat_name = 'posts_fetched';
+                
                 COMMIT;
             """)
             
-            # Update stats after successful transaction
-            _update_stat('posts_fetched')
             conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Failed to mark post {post_id} as fetched: {e}")
@@ -274,7 +289,7 @@ def mark_post_as_fetched(post_id: int, html_content: str) -> None:
 def increment_retry_and_schedule(post_id: int, retry_time: int) -> int:
     """Increment retry count and schedule next retry in a single query."""
     conn = get_db_connection()
-    with _write_lock:
+    with _write_rlock:
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE posts 
@@ -289,7 +304,7 @@ def increment_retry_and_schedule(post_id: int, retry_time: int) -> int:
 def delete_post(post_id: int) -> None:
     """Delete a post and its associated text."""
     conn = get_db_connection()
-    with _write_lock:
+    with _write_rlock:
         cursor = conn.cursor()
         cursor.executescript(f"""
             BEGIN TRANSACTION;
@@ -318,7 +333,7 @@ def get_posts_to_process(limit: int = 10) -> list[tuple[int, str]]:
 def mark_post_as_processed(post_id: int, processed_text: str) -> None:
     """Mark a post as processed and store its processed text."""
     conn = get_db_connection()
-    with _write_lock:
+    with _write_rlock:
         current_time = _get_current_time()
         cursor = conn.cursor()
         
@@ -337,11 +352,15 @@ def mark_post_as_processed(post_id: int, processed_text: str) -> None:
                 SET processed_at_utc = {current_time}
                 WHERE id = {post_id};
                 
+                -- Update stats
+                UPDATE post_stats 
+                SET stat_value = stat_value + 1,
+                    last_updated_utc = {current_time}
+                WHERE stat_name = 'posts_processed';
+                
                 COMMIT;
             """)
             
-            # Update stats after successful transaction
-            _update_stat('posts_processed')
             conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Database error while marking post {post_id} as processed: {e}")
@@ -365,19 +384,28 @@ def get_posts_to_post(limit: int = 10) -> list[tuple[int, str, str, str]]:
 def mark_post_as_posted(post_id: int) -> None:
     """Mark a post as posted."""
     conn = get_db_connection()
-    with _write_lock:
+    with _write_rlock:
         current_time = _get_current_time()
         cursor = conn.cursor()
         
         try:
-            cursor.execute("""
+            cursor.executescript(f"""
+                BEGIN TRANSACTION;
+                
+                -- Update the post's posted timestamp
                 UPDATE posts 
-                SET posted_at_utc = ?
-                WHERE id = ?
-            """, (current_time, post_id))
+                SET posted_at_utc = {current_time}
+                WHERE id = {post_id};
+                
+                -- Update stats
+                UPDATE post_stats 
+                SET stat_value = stat_value + 1,
+                    last_updated_utc = {current_time}
+                WHERE stat_name = 'posts_posted';
+                
+                COMMIT;
+            """)
             
-            # Update stats after successful update
-            _update_stat('posts_posted')
             conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Failed to mark post {post_id} as posted: {e}")
@@ -385,7 +413,7 @@ def mark_post_as_posted(post_id: int) -> None:
 
 def mark_post_as_skipped() -> None:
     """Increment the posts_skipped stat."""
-    with _write_lock:
+    with _write_rlock:
         try:
             _update_stat('posts_skipped')
         except sqlite3.Error as e:
@@ -395,7 +423,7 @@ def mark_post_as_skipped() -> None:
 def handle_fetch_retry(post_id: int, retry_time: int) -> bool:
     """Handle a fetch retry for a post. Returns True if post was skipped, False otherwise."""
     conn = get_db_connection()
-    with _write_lock:
+    with _write_rlock:
         try:
             # First commit any pending transaction
             conn.commit()

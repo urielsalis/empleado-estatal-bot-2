@@ -239,8 +239,9 @@ def get_posts_to_fetch(limit: int = 10) -> list[tuple[int, str]]:
     """, (_get_current_time(), limit))
     return cursor.fetchall()
 
-def mark_post_as_fetched(conn: sqlite3.Connection, post_id: int, html_content: str) -> None:
+def mark_post_as_fetched(post_id: int, html_content: str) -> None:
     """Mark a post as fetched and store its HTML content."""
+    conn = get_db_connection()
     with _write_lock:
         current_time = _get_current_time()
         cursor = conn.cursor()
@@ -391,8 +392,9 @@ def mark_post_as_skipped() -> None:
             logger.error(f"Failed to increment posts_skipped stat: {e}")
             raise
 
-def handle_fetch_retry(conn: sqlite3.Connection, post_id: int, retry_time: int) -> bool:
+def handle_fetch_retry(post_id: int, retry_time: int) -> bool:
     """Handle a fetch retry for a post. Returns True if post was skipped, False otherwise."""
+    conn = get_db_connection()
     with _write_lock:
         try:
             # First commit any pending transaction

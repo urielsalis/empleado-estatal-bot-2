@@ -77,19 +77,13 @@ def get_stats_from_db() -> Dict[str, int]:
 def update_cache():
     """Update the stats cache periodically."""
     global stats_cache, last_cache_update
-    conn = None
-    try:
-        conn = get_db_connection(str(Path("data/bot.db")))
-        while True:
-            try:
-                stats_cache = get_stats_from_db()
-                last_cache_update = time.time()
-            except Exception as e:
-                logger.error(f"Error updating stats cache: {e}")
-            time.sleep(CACHE_TTL)
-    finally:
-        if conn:
-            close_db_connection()
+    while True:
+        try:
+            stats_cache = get_stats_from_db()
+            last_cache_update = time.time()
+        except Exception as e:
+            logger.error(f"Error updating stats cache: {e}")
+        time.sleep(CACHE_TTL)
 
 @app.get("/", response_class=HTMLResponse)
 async def stats_page(request: Request):

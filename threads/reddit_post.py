@@ -1,15 +1,13 @@
-import threading
 import time
 import praw
 import logging
-import sqlite3
 from .base_thread import BaseThread
 from infrastructure.config import load_config
 from infrastructure.database import get_posts_to_post, mark_post_as_posted
 
 class RedditPostThread(BaseThread):
-    def __init__(self, reddit: praw.Reddit, db_path: str, db_lock: threading.Lock, logger: logging.Logger):
-        super().__init__(db_path, db_lock, logger)
+    def __init__(self, reddit: praw.Reddit, logger: logging.Logger):
+        super().__init__(logger)
         self.reddit = reddit
         self.config = load_config()
         self.max_length = self.config['newspaper_processor']['max_length']
@@ -54,53 +52,49 @@ class RedditPostThread(BaseThread):
             
         return chunks
     
-    def process_cycle(self, conn):
+    def process_cycle(self):
         """Process and post content to Reddit."""
-        with self.db_lock:
-            try:
-                # Get posts that have been processed but not posted yet
-                posts = get_posts_to_post(conn)
-                
-                for post_id, reddit_id, subreddit, processed_text in posts:
-                    try:
-                        self.logger.info(f"Found post to comment on: {reddit_id} in r/{subreddit}")
-                        
-                        # Split the text into chunks
-                        text_chunks = self.split_text(processed_text, subreddit)
-                        self.logger.info(f"Split text into {len(text_chunks)} chunks")
-                        
-                        # Get the Reddit submission
-                        submission = self.reddit.submission(id=reddit_id)
-                        
-                        # Post the first comment
-                        current_comment = submission.reply(text_chunks[0])
-                        self.logger.info(f"Posted first comment on submission {reddit_id}")
-                        
-                        # Pin the first comment if the subreddit is in the distinguishable list
-                        if subreddit in self.distinguishable_subreddits:
-                            try:
-                                current_comment.mod.distinguish(sticky=True)
-                                self.logger.info(f"Pinned first comment on submission {reddit_id}")
-                            except Exception as e:
-                                self.logger.error(f"Failed to pin comment on submission {reddit_id}: {e}")
-                        
-                        # If there are more chunks, post them as replies to the previous comment
-                        for chunk in text_chunks[1:]:
-                            current_comment = current_comment.reply(chunk)
-                            self.logger.info(f"Posted continuation comment on submission {reddit_id}")
-                            # Add a small delay between comments to avoid rate limiting
-                            time.sleep(2)
-                        
-                        # Mark the post as posted
+        try:
+            # Get posts that have been processed but not posted yet
+            posts = get_posts_to_post()
+            
+            for post_id, reddit_id, subreddit, processed_text in posts:
+                try:
+                    self.logger.info(f"Found post to comment on: {reddit_id} in r/{subreddit}")
+                    
+                    # Split the text into chunks
+                    text_chunks = self.split_text(processed_text, subreddit)
+                    self.logger.info(f"Split text into {len(text_chunks)} chunks")
+                    
+                    # Get the Reddit submission
+                    submission = self.reddit.submission(id=reddit_id)
+                    
+                    # Post the first comment
+                    current_comment = submission.reply(text_chunks[0])
+                    self.logger.info(f"Posted first comment on submission {reddit_id}")
+                    
+                    # Pin the first comment if the subreddit is in the distinguishable list
+                    if subreddit in self.distinguishable_subreddits:
                         try:
-                            mark_post_as_posted(conn, post_id)
-                            self.logger.info(f"Successfully marked post {post_id} as posted")
-                        except sqlite3.Error as e:
-                            self.logger.error(f"Database error while marking post {post_id} as posted: {e}")
-                            continue
-                        
-                    except Exception as e:
-                        self.logger.error(f"Error processing post {post_id}: {e}")
-                        continue
-            except sqlite3.Error as e:
-                self.logger.error(f"Database error while fetching posts to post: {e}")
+                            current_comment.mod.distinguish(sticky=True)
+                            self.logger.info(f"Pinned first comment on submission {reddit_id}")
+                        except Exception as e:
+                            self.logger.error(f"Failed to pin comment on submission {reddit_id}: {e}")
+                    
+                    # If there are more chunks, post them as replies to the previous comment
+                    for chunk in text_chunks[1:]:
+                        current_comment = current_comment.reply(chunk)
+                        self.logger.info(f"Posted continuation comment on submission {reddit_id}")
+                        # Add a small delay between comments to avoid rate limiting
+                        time.sleep(2)
+                    
+                    # Mark the post as posted
+                    mark_post_as_posted(post_id)
+                    self.logger.info(f"Successfully marked post {post_id} as posted")
+                    
+                except Exception as e:
+                    self.logger.error(f"Error processing post {post_id}: {e}")
+                    continue
+        except Exception as e:
+            self.logger.error(f"Error in post cycle: {e}")
+            raise

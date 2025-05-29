@@ -27,6 +27,8 @@ def compile_domain_patterns(patterns: List[str]) -> Tuple[List[str], List[re.Pat
 def is_domain_banned(url: str, banned_patterns: Tuple[List[str], List[re.Pattern], List[str]]) -> bool:
     """Check if the URL's domain is in the banned list (exact or wildcard)."""
     try:
+        if(url.startswith('/')):
+            return True
         parsed = urlparse(url)
         domain = parsed.netloc.lower()
         path = parsed.path.lower().rstrip('/')  # Remove trailing slash

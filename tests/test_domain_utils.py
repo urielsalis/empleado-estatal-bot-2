@@ -7,7 +7,8 @@ def banned_patterns():
         "*.blocked.com",
         "blocked2.com",
         "*.jpg",
-        "*.ru"
+        "*.ru",
+        "/r/*"
     ]
     return compile_domain_patterns(banned_domains)
 
@@ -34,6 +35,8 @@ def test_blocked_com_and_blocked2_com(banned_patterns):
         ("https://blocked.com/image.html", False),
         ("https://blocked.ru/image.html", True),
         ("https://blocked.com/image.ru", True),
+        ("/r/test", True),
+        ("https://reddit.com/r/test", False),
     ]
     pytest_case_runner(test_cases, banned_patterns)
 

@@ -453,15 +453,6 @@ def handle_fetch_retry(post_id: int, retry_time: int) -> bool:
                 cursor.execute("DELETE FROM texts WHERE post_id = ?", (post_id,))
                 cursor.execute("DELETE FROM posts WHERE id = ?", (post_id,))
                 
-                # Update skipped stat
-                current_time = _get_current_time()
-                cursor.execute("""
-                    UPDATE post_stats 
-                    SET stat_value = stat_value + 1,
-                        last_updated_utc = ?
-                    WHERE stat_name = 'posts_skipped'
-                """, (current_time,))
-                
                 conn.commit()
                 return True
             

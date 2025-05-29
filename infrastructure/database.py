@@ -425,23 +425,51 @@ def handle_fetch_retry(post_id: int, retry_time: int) -> bool:
     conn = get_db_connection()
     with _write_rlock:
         try:
-            # First commit any pending transaction
-            conn.commit()
+            cursor = conn.cursor()
             
-            # Increment retry count and schedule next retry
-            retry_count = increment_retry_and_schedule(post_id, retry_time)
+            # Get current retry count
+            cursor.execute("""
+                SELECT retry_count 
+                FROM posts 
+                WHERE id = ?
+            """, (post_id,))
+            current_retry = cursor.fetchone()[0]
+            new_retry = current_retry + 1
+            
+            # If max retries reached, delete the post and increment skipped stat
+            if new_retry > 3:
+                # Delete post and its texts
+                cursor.execute("DELETE FROM texts WHERE post_id = ?", (post_id,))
+                cursor.execute("DELETE FROM posts WHERE id = ?", (post_id,))
+                
+                # Update skipped stat
+                current_time = _get_current_time()
+                cursor.execute("""
+                    UPDATE post_stats 
+                    SET stat_value = stat_value + 1,
+                        last_updated_utc = ?
+                    WHERE stat_name = 'posts_skipped'
+                """, (current_time,))
+                
+                conn.commit()
+                return True
+            
+            # Update retry count and schedule next retry
+            cursor.execute("""
+                UPDATE posts 
+                SET retry_count = ?,
+                    fetch_at_utc = ?
+                WHERE id = ?
+            """, (new_retry, retry_time, post_id))
+            
+            conn.commit()
             
             # Log the retry time
             retry_time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(retry_time))
-            logger.info(f"Post {post_id} will be retried at {retry_time_str} (retry count: {retry_count})")
+            logger.info(f"Post {post_id} will be retried at {retry_time_str} (retry count: {new_retry})")
             
-            # If max retries reached, delete the post and increment skipped stat
-            if retry_count > 3:
-                delete_post(post_id)
-                _update_stat('posts_skipped')
-                return True
-                
             return False
+            
         except sqlite3.Error as e:
             logger.error(f"Failed to handle fetch retry for post {post_id}: {e}")
             raise 

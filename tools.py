@@ -15,36 +15,12 @@ def get_post_stats(db_path: str) -> Dict[str, Any]:
     try:
         cursor = conn.cursor()
         
-        # Get total count
-        cursor.execute("SELECT COUNT(*) FROM posts")
-        total_posts = cursor.fetchone()[0]
-        
-        # Get fetched vs unfetched count
+        # Get all stats from post_stats table
         cursor.execute("""
-            SELECT 
-                SUM(CASE WHEN fetched_at_utc IS NOT NULL THEN 1 ELSE 0 END) as fetched_count,
-                SUM(CASE WHEN fetched_at_utc IS NULL THEN 1 ELSE 0 END) as unfetched_count
-            FROM posts
+            SELECT stat_name, stat_value, last_updated_utc
+            FROM post_stats
         """)
-        fetched_count, unfetched_count = cursor.fetchone()
-        
-        # Get processed vs unprocessed count
-        cursor.execute("""
-            SELECT 
-                SUM(CASE WHEN processed_at_utc IS NOT NULL THEN 1 ELSE 0 END) as processed_count,
-                SUM(CASE WHEN processed_at_utc IS NULL THEN 1 ELSE 0 END) as unprocessed_count
-            FROM posts
-        """)
-        processed_count, unprocessed_count = cursor.fetchone()
-        
-        # Get posted vs unposted count
-        cursor.execute("""
-            SELECT 
-                SUM(CASE WHEN posted_at_utc IS NOT NULL THEN 1 ELSE 0 END) as posted_count,
-                SUM(CASE WHEN posted_at_utc IS NULL THEN 1 ELSE 0 END) as unposted_count
-            FROM posts
-        """)
-        posted_count, unposted_count = cursor.fetchone()
+        stats = {row[0]: row[1] for row in cursor.fetchall()}
         
         # Get raw text vs processed text count
         cursor.execute("""
@@ -55,33 +31,24 @@ def get_post_stats(db_path: str) -> Dict[str, Any]:
         """)
         raw_text_count, processed_text_count = cursor.fetchone()
         
-        # Get oldest and newest post timestamps
-        cursor.execute("""
-            SELECT 
-                MIN(created_utc) as oldest,
-                MAX(created_utc) as newest
-            FROM posts
-        """)
-        oldest_utc, newest_utc = cursor.fetchone()
-        
         # Convert timestamps to human-readable format
-        oldest_date = datetime.fromtimestamp(oldest_utc, tz=timezone.utc) if oldest_utc else None
-        newest_date = datetime.fromtimestamp(newest_utc, tz=timezone.utc) if newest_utc else None
+        oldest_date = datetime.fromtimestamp(stats['oldest_post'], tz=timezone.utc) if stats['oldest_post'] else None
+        newest_date = datetime.fromtimestamp(stats['newest_post'], tz=timezone.utc) if stats['newest_post'] else None
         
         return {
-            "total_posts": total_posts,
+            "total_posts": stats['total_posts'],
             "states": {
                 "fetched": {
-                    "count": fetched_count or 0,
-                    "pending": unfetched_count or 0
+                    "count": stats['posts_fetched'],
+                    "pending": stats['total_posts'] - stats['posts_fetched']
                 },
                 "processed": {
-                    "count": processed_count or 0,
-                    "pending": unprocessed_count or 0
+                    "count": stats['posts_processed'],
+                    "pending": stats['posts_fetched'] - stats['posts_processed']
                 },
                 "posted": {
-                    "count": posted_count or 0,
-                    "pending": unposted_count or 0
+                    "count": stats['posts_posted'],
+                    "pending": stats['posts_processed'] - stats['posts_posted']
                 },
                 "texts": {
                     "raw": raw_text_count or 0,

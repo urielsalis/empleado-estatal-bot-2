@@ -54,12 +54,12 @@ class RedditPostThread(BaseThread):
             
         return chunks
     
-    def process_cycle(self):
+    def process_cycle(self, conn):
         """Process and post content to Reddit."""
         with self.db_lock:
             try:
                 # Get posts that have been processed but not posted yet
-                posts = get_posts_to_post(self.conn)
+                posts = get_posts_to_post(conn)
                 
                 for post_id, reddit_id, subreddit, processed_text in posts:
                     try:
@@ -93,7 +93,7 @@ class RedditPostThread(BaseThread):
                         
                         # Mark the post as posted
                         try:
-                            mark_post_as_posted(self.conn, post_id)
+                            mark_post_as_posted(conn, post_id)
                             self.logger.info(f"Successfully marked post {post_id} as posted")
                         except sqlite3.Error as e:
                             self.logger.error(f"Database error while marking post {post_id} as posted: {e}")

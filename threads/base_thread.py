@@ -20,7 +20,6 @@ class BaseThread(threading.Thread, ABC):
         self.db_lock = db_lock
         self.interval = interval
         self.error_interval = error_interval
-        self.conn = None
         self.logger = logger
 
     def stop(self):
@@ -28,7 +27,7 @@ class BaseThread(threading.Thread, ABC):
         self._stop_event.set()
 
     @abstractmethod
-    def process_cycle(self) -> None:
+    def process_cycle(self, conn) -> None:
         """Implement the main processing logic for each cycle."""
         pass
 
@@ -36,20 +35,16 @@ class BaseThread(threading.Thread, ABC):
         """Main thread loop that handles the common thread lifecycle."""
         self.logger.info("Starting thread")
         
-        # Create database connection once at thread start
-        self.conn = get_db_connection(self.db_path)
-        
         try:
             while not self._stop_event.is_set():
                 try:
                     self.logger.debug("Starting processing cycle...")
-                    self.process_cycle()
+                    with get_db_connection(self.db_path) as conn:
+                        self.process_cycle(conn)
                     self.logger.debug("Processing cycle completed")
                     time.sleep(self.interval)
                 except Exception as e:
                     self.logger.error(f"Error: {e}")
                     time.sleep(self.error_interval)
         finally:
-            if self.conn:
-                self.conn.close()
             self.logger.info("Thread stopped") 

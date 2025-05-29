@@ -17,12 +17,12 @@ class NewspaperFetcherThread(BaseThread):
     def __init__(self, db_path: str, db_lock: threading.Lock, logger: logging.Logger):
         super().__init__(db_path, db_lock, logger)
     
-    def process_cycle(self):
+    def process_cycle(self, conn):
         """Fetch and process newspaper articles."""
         with self.db_lock:
             try:
                 # Get posts that are ready to be fetched
-                posts = get_posts_to_fetch(self.conn)
+                posts = get_posts_to_fetch(conn)
                 if posts:
                     self.logger.info(f"Found {len(posts)} posts ready to fetch")
                 
@@ -44,7 +44,7 @@ class NewspaperFetcherThread(BaseThread):
                         
                         # Mark post as fetched and store content
                         try:
-                            mark_post_as_fetched(self.conn, post_id, html_content)
+                            mark_post_as_fetched(conn, post_id, html_content)
                             self.logger.info(f"Successfully fetched and stored article for post {post_id}")
                         except sqlite3.Error as e:
                             self.logger.error(f"Database error while storing article for post {post_id}: {e}")
@@ -56,13 +56,13 @@ class NewspaperFetcherThread(BaseThread):
                         # Handle fetch failure with retry logic
                         retry_time = int(time.time()) + (10 * 60)  # 10 minutes from now
                         try:
-                            retry_count = increment_retry_and_schedule(self.conn, post_id, retry_time)
+                            retry_count = increment_retry_and_schedule(conn, post_id, retry_time)
                             self.logger.info(f"Scheduled retry for post {post_id} at {datetime.fromtimestamp(retry_time).isoformat()}")
                             
                             if retry_count > 3:
                                 self.logger.info(f"Deleting post {post_id} after {retry_count} failed attempts")
                                 try:
-                                    delete_post(self.conn, post_id)
+                                    delete_post(conn, post_id)
                                     self.logger.info(f"Deleted post {post_id} and its associated text")
                                 except sqlite3.Error as e:
                                     self.logger.error(f"Database error while deleting post {post_id}: {e}")

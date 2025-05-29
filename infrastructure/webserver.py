@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 import uvicorn
 import threading
 from pathlib import Path
+import logging
 
 from infrastructure.database import get_db_connection
 
@@ -16,6 +17,8 @@ templates = Jinja2Templates(directory="templates")
 stats_cache: Dict[str, int] = {}
 last_cache_update = 0
 CACHE_TTL = 60  # 1 minute
+
+logger = logging.getLogger(__name__)
 
 def get_stats_from_db() -> Dict[str, int]:
     """Get current stats from the database."""
@@ -62,8 +65,11 @@ def update_cache():
     """Update the stats cache periodically."""
     global stats_cache, last_cache_update
     while True:
-        stats_cache = get_stats_from_db()
-        last_cache_update = time.time()
+        try:
+            stats_cache = get_stats_from_db()
+            last_cache_update = time.time()
+        except Exception as e:
+            logger.error(f"Error updating stats cache: {e}")
         time.sleep(CACHE_TTL)
 
 @app.get("/", response_class=HTMLResponse)
@@ -71,41 +77,48 @@ async def stats_page(request: Request):
     """Render the stats dashboard."""
     global stats_cache, last_cache_update
     
-    # Update cache if it's expired
-    if time.time() - last_cache_update > CACHE_TTL:
-        stats_cache = get_stats_from_db()
-        last_cache_update = time.time()
-    
-    # Create a copy of stats for display
-    display_stats = stats_cache.copy()
-    
-    # Format timestamps
-    if 'oldest_post' in display_stats and display_stats['oldest_post']:
-        try:
-            display_stats['oldest_post'] = time.strftime(
-                '%Y-%m-%d %H:%M:%S', 
-                time.localtime(int(display_stats['oldest_post']))
-            )
-        except (ValueError, TypeError):
-            display_stats['oldest_post'] = 'N/A'
-            
-    if 'newest_post' in display_stats and display_stats['newest_post']:
-        try:
-            display_stats['newest_post'] = time.strftime(
-                '%Y-%m-%d %H:%M:%S', 
-                time.localtime(int(display_stats['newest_post']))
-            )
-        except (ValueError, TypeError):
-            display_stats['newest_post'] = 'N/A'
-    
-    return templates.TemplateResponse(
-        "stats.html",
-        {
-            "request": request,
-            "stats": display_stats,
-            "last_update": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(last_cache_update))
-        }
-    )
+    try:
+        # Update cache if it's expired
+        if time.time() - last_cache_update > CACHE_TTL:
+            stats_cache = get_stats_from_db()
+            last_cache_update = time.time()
+        
+        # Create a copy of stats for display
+        display_stats = stats_cache.copy()
+        
+        # Format timestamps
+        if 'oldest_post' in display_stats and display_stats['oldest_post']:
+            try:
+                display_stats['oldest_post'] = time.strftime(
+                    '%Y-%m-%d %H:%M:%S', 
+                    time.localtime(int(display_stats['oldest_post']))
+                )
+            except (ValueError, TypeError):
+                display_stats['oldest_post'] = 'N/A'
+                
+        if 'newest_post' in display_stats and display_stats['newest_post']:
+            try:
+                display_stats['newest_post'] = time.strftime(
+                    '%Y-%m-%d %H:%M:%S', 
+                    time.localtime(int(display_stats['newest_post']))
+                )
+            except (ValueError, TypeError):
+                display_stats['newest_post'] = 'N/A'
+        
+        return templates.TemplateResponse(
+            "stats.html",
+            {
+                "request": request,
+                "stats": display_stats,
+                "last_update": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(last_cache_update))
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error rendering stats page: {e}")
+        return HTMLResponse(
+            content="<html><body><h1>Error Loading Stats</h1><p>Please try again later.</p></body></html>",
+            status_code=500
+        )
 
 @app.exception_handler(404)
 async def custom_404_handler(request: Request, exc: HTTPException):

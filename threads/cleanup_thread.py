@@ -10,7 +10,7 @@ class CleanupThread(BaseThread):
         # Run cleanup every hour
         super().__init__(db_path, db_lock, logger, interval=3600)
     
-    def process_cycle(self):
+    def process_cycle(self, conn):
         """Run the cleanup process."""
         with self.db_lock:
-            cleanup_old_posts(self.conn) 
+            cleanup_old_posts(conn) 

@@ -12,12 +12,12 @@ class NewspaperProcessorThread(BaseThread):
         self.config = load_config()
         self.signature = self.config['newspaper_processor']['signature']
     
-    def process_cycle(self):
+    def process_cycle(self, conn):
         """Process newspaper articles."""
         with self.db_lock:
             try:
                 # Get posts that have been fetched but not processed
-                posts = get_posts_to_process(self.conn)
+                posts = get_posts_to_process(conn)
                 
                 for post_id, raw_text in posts:
                     try:
@@ -28,7 +28,7 @@ class NewspaperProcessorThread(BaseThread):
                         if not processed_text:
                             self.logger.warning(f"Could not extract text from post {post_id}")
                             try:
-                                delete_post(self.conn, post_id)
+                                delete_post(conn, post_id)
                                 self.logger.info(f"Deleted post {post_id} due to failed text extraction")
                             except sqlite3.Error as e:
                                 self.logger.error(f"Database error while deleting post {post_id}: {e}")
@@ -36,7 +36,7 @@ class NewspaperProcessorThread(BaseThread):
                         
                         # Mark post as processed and store the processed text
                         try:
-                            mark_post_as_processed(self.conn, post_id, processed_text)
+                            mark_post_as_processed(conn, post_id, processed_text)
                             self.logger.info(f"Successfully processed article for post {post_id}")
                         except sqlite3.Error as e:
                             self.logger.error(f"Database error while marking post {post_id} as processed: {e}")

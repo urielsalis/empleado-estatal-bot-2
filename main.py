@@ -112,12 +112,9 @@ def main():
         logger.info(f"Monitoring {len(monitored)} subreddits")
         logger.info(f"Distinguished in {len(distinguished)} subreddits")
         
-        # Initialize database and get db_path
-        db_path = init_db()  # This will create the database and tables if they don't exist
+        # Initialize database
+        init_db()  # This will create the database and tables if they don't exist
         logger.info("Database initialized successfully!")
-        
-        # Create database lock
-        db_lock = threading.Lock()
         
         # Set up signal handler for graceful shutdown
         signal.signal(signal.SIGINT, signal_handler)
@@ -135,31 +132,21 @@ def main():
         logger.info("Starting worker threads...")
         fetch_thread = RedditFetchThread(
             reddit_client=reddit,
-            db_path=db_path,
-            db_lock=db_lock,
             logger=get_thread_logger('RedditFetchThread'),
             subreddits=monitored,
             banned_domains=get_banned_domains()
         )
         newspaper_fetcher_thread = NewspaperFetcherThread(
-            db_path=db_path,
-            db_lock=db_lock,
             logger=get_thread_logger('NewspaperFetcherThread')
         )
         processor_thread = NewspaperProcessorThread(
-            db_path=db_path,
-            db_lock=db_lock,
             logger=get_thread_logger('NewspaperProcessorThread')
         )
         post_thread = RedditPostThread(
             reddit=reddit,
-            db_path=db_path,
-            db_lock=db_lock,
             logger=get_thread_logger('RedditPostThread')
         )
         cleanup_thread = CleanupThread(
-            db_path=db_path,
-            db_lock=db_lock,
             logger=get_thread_logger('CleanupThread')
         )
         

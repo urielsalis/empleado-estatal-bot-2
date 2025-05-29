@@ -1,4 +1,3 @@
-import threading
 import logging
 import time
 from typing import List
@@ -11,14 +10,12 @@ class RedditFetchThread(BaseThread):
     def __init__(
         self,
         reddit_client: praw.Reddit,
-        db_path: str,
-        db_lock: threading.Lock,
         logger: logging.Logger,
         subreddits: List[str],
         banned_domains: List[str],
         interval: int = 300
     ):
-        super().__init__(db_path, db_lock, logger, interval)
+        super().__init__(logger, interval)
         self.reddit = reddit_client
         self.subreddits = subreddits
         self.banned_patterns = compile_domain_patterns(banned_domains)
@@ -27,7 +24,7 @@ class RedditFetchThread(BaseThread):
         """Check if a URL's domain is in the banned list."""
         return is_domain_banned(url, self.banned_patterns)
 
-    def process_cycle(self, conn):
+    def process_cycle(self):
         """Process new submissions from Reddit."""
         
         # Join subreddits with + for multi-subreddit stream
@@ -50,27 +47,23 @@ class RedditFetchThread(BaseThread):
                 # Skip if domain is banned
                 if self.is_domain_banned(submission.url):
                     self.logger.info(f"Skipping banned domain: {submission.url}")
-                    with self.db_lock:
-                        mark_post_as_skipped(conn)
+                    mark_post_as_skipped()
                     continue
                 
                 # Skip if post is older than 1 day
                 if submission.created_utc < one_day_ago:
                     self.logger.info(f"Skipping old post: {submission.id} (created {submission.created_utc})")
-                    with self.db_lock:
-                        mark_post_as_skipped(conn)
+                    mark_post_as_skipped()
                     continue
                     
                 # Insert post if it doesn't exist
-                with self.db_lock:
-                    self.logger.info(f"Inserting post: {submission.id}")
-                    insert_post(
-                        conn,
-                        reddit_id=submission.id,
-                        subreddit=submission.subreddit.display_name,
-                        url=submission.url,
-                        created_utc=int(submission.created_utc)
-                    )
+                self.logger.info(f"Inserting post: {submission.id}")
+                insert_post(
+                    reddit_id=submission.id,
+                    subreddit=submission.subreddit.display_name,
+                    url=submission.url,
+                    created_utc=int(submission.created_utc)
+                )
                     
             except Exception as e:
                 self.logger.error(f"Error processing submission {submission.id}: {str(e)}")

@@ -8,7 +8,7 @@ import threading
 from pathlib import Path
 import logging
 
-from infrastructure.database import get_db_connection
+from infrastructure.database import get_db_connection, close_db_connection
 
 app = FastAPI(title="Bot Stats Dashboard")
 templates = Jinja2Templates(directory="templates")
@@ -26,7 +26,8 @@ def get_stats_from_db() -> Dict[str, int]:
     if not db_path.exists():
         return {}
     
-    with get_db_connection(str(db_path)) as conn:
+    conn = get_db_connection(str(db_path))
+    try:
         cursor = conn.cursor()
         
         # Get basic stats
@@ -70,17 +71,25 @@ def get_stats_from_db() -> Dict[str, int]:
         stats['remaining_skipped'] = cursor.fetchone()[0]
         
         return stats
+    finally:
+        close_db_connection()
 
 def update_cache():
     """Update the stats cache periodically."""
     global stats_cache, last_cache_update
-    while True:
-        try:
-            stats_cache = get_stats_from_db()
-            last_cache_update = time.time()
-        except Exception as e:
-            logger.error(f"Error updating stats cache: {e}")
-        time.sleep(CACHE_TTL)
+    conn = None
+    try:
+        conn = get_db_connection(str(Path("data/bot.db")))
+        while True:
+            try:
+                stats_cache = get_stats_from_db()
+                last_cache_update = time.time()
+            except Exception as e:
+                logger.error(f"Error updating stats cache: {e}")
+            time.sleep(CACHE_TTL)
+    finally:
+        if conn:
+            close_db_connection()
 
 @app.get("/", response_class=HTMLResponse)
 async def stats_page(request: Request):

@@ -3,20 +3,72 @@ import sqlite3
 from pathlib import Path
 import logging
 import time
+import threading
+from contextlib import contextmanager
+from typing import Generator
 
 logger = logging.getLogger(__name__)
+
+# Global connection pool
+_connection_pool = []
+_pool_lock = threading.Lock()
+MAX_CONNECTIONS = 10
 
 def _get_current_time() -> int:
     """Helper function to get current UTC timestamp."""
     return int(time.time())
 
-def get_db_connection(db_path: str) -> sqlite3.Connection:
-    """Create a new database connection with proper settings for thread safety."""
-    conn = sqlite3.connect(db_path, timeout=30.0)  # 30 second timeout
-    conn.execute("PRAGMA journal_mode=WAL")  # Enable Write-Ahead Logging
-    conn.execute("PRAGMA busy_timeout=30000")  # 30 second busy timeout
-    return conn
+@contextmanager
+def get_db_connection(db_path: str) -> Generator[sqlite3.Connection, None, None]:
+    """Get a database connection from the pool with proper settings for thread safety."""
+    conn = None
+    try:
+        with _pool_lock:
+            if _connection_pool:
+                conn = _connection_pool.pop()
+            else:
+                conn = sqlite3.connect(db_path, timeout=30.0)  # 30 second timeout
+                conn.execute("PRAGMA journal_mode=WAL")  # Enable Write-Ahead Logging
+                conn.execute("PRAGMA busy_timeout=30000")  # 30 second busy timeout
+                conn.execute("PRAGMA synchronous=NORMAL")  # Slightly faster writes
+                conn.execute("PRAGMA cache_size=-2000")  # Use 2MB of memory for cache
+        
+        yield conn
+    finally:
+        if conn:
+            try:
+                with _pool_lock:
+                    if len(_connection_pool) < MAX_CONNECTIONS:
+                        _connection_pool.append(conn)
+                    else:
+                        conn.close()
+            except Exception as e:
+                logger.error(f"Error returning connection to pool: {e}")
+                try:
+                    conn.close()
+                except Exception as e:
+                    logger.error(f"Error closing connection: {e}")
 
+def retry_on_locked(max_retries: int = 3, delay: float = 1.0):
+    """Decorator to retry database operations that might fail due to locks."""
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            last_error = None
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except sqlite3.OperationalError as e:
+                    if "database is locked" in str(e):
+                        last_error = e
+                        if attempt < max_retries - 1:
+                            time.sleep(delay * (attempt + 1))  # Exponential backoff
+                            continue
+                    raise
+            raise last_error
+        return wrapper
+    return decorator
+
+@retry_on_locked()
 def cleanup_old_posts(conn: sqlite3.Connection) -> None:
     """Delete posts that were posted more than 1 day ago or have no text content."""
     try:
@@ -83,72 +135,64 @@ def init_db() -> str:
     db_path = data_dir / "bot.db"
     logger.info(f"Initializing database at: {db_path}")
     
-    try:
-        conn = get_db_connection(str(db_path))
-        logger.info("Database connection established successfully.")
-    except sqlite3.Error as e:
-        logger.error(f"Failed to connect to the database: {e}")
-        raise
-    
     # Create tables if they don't exist
-    try:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS posts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                reddit_id TEXT UNIQUE,
-                subreddit TEXT,
-                url TEXT,
-                created_utc INTEGER,
-                fetch_at_utc INTEGER DEFAULT NULL,
-                fetched_at_utc INTEGER DEFAULT NULL,
-                processed_at_utc INTEGER DEFAULT NULL,
-                posted_at_utc INTEGER DEFAULT NULL,
-                retry_count INTEGER DEFAULT 0
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS texts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                post_id INTEGER,
-                text TEXT DEFAULT NULL,
-                raw_text TEXT DEFAULT NULL,
-                FOREIGN KEY (post_id) REFERENCES posts (id)
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS post_stats (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                stat_name TEXT UNIQUE,
-                stat_value INTEGER DEFAULT 0,
-                last_updated_utc INTEGER
-            )
-        """)
-        
-        # Initialize default statistics if they don't exist
-        default_stats = [
-            ('total_posts', 0),
-            ('posts_fetched', 0),
-            ('content_fetched', 0),
-            ('posts_processed', 0),
-            ('posts_posted', 0),
-            ('oldest_post', 0),
-            ('newest_post', 0)
-        ]
-        
-        for stat_name, initial_value in default_stats:
+    with get_db_connection(str(db_path)) as conn:
+        try:
             conn.execute("""
-                INSERT OR IGNORE INTO post_stats (stat_name, stat_value, last_updated_utc)
-                VALUES (?, ?, ?)
-            """, (stat_name, initial_value, _get_current_time()))
+                CREATE TABLE IF NOT EXISTS posts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    reddit_id TEXT UNIQUE,
+                    subreddit TEXT,
+                    url TEXT,
+                    created_utc INTEGER,
+                    fetch_at_utc INTEGER DEFAULT NULL,
+                    fetched_at_utc INTEGER DEFAULT NULL,
+                    processed_at_utc INTEGER DEFAULT NULL,
+                    posted_at_utc INTEGER DEFAULT NULL,
+                    retry_count INTEGER DEFAULT 0
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS texts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    post_id INTEGER,
+                    text TEXT DEFAULT NULL,
+                    raw_text TEXT DEFAULT NULL,
+                    FOREIGN KEY (post_id) REFERENCES posts (id)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS post_stats (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    stat_name TEXT UNIQUE,
+                    stat_value INTEGER DEFAULT 0,
+                    last_updated_utc INTEGER
+                )
+            """)
             
-        conn.commit()
-        logger.info("Database tables created or already exist.")
-        
-    except sqlite3.Error as e:
-        logger.error(f"Failed to create tables: {e}")
-        raise
-    finally:
-        conn.close()
+            # Initialize default statistics if they don't exist
+            default_stats = [
+                ('total_posts', 0),
+                ('posts_fetched', 0),
+                ('content_fetched', 0),
+                ('posts_processed', 0),
+                ('posts_posted', 0),
+                ('oldest_post', 0),
+                ('newest_post', 0)
+            ]
+            
+            for stat_name, initial_value in default_stats:
+                conn.execute("""
+                    INSERT OR IGNORE INTO post_stats (stat_name, stat_value, last_updated_utc)
+                    VALUES (?, ?, ?)
+                """, (stat_name, initial_value, _get_current_time()))
+                
+            conn.commit()
+            logger.info("Database tables created or already exist.")
+            
+        except sqlite3.Error as e:
+            logger.error(f"Failed to create tables: {e}")
+            raise
     
     return str(db_path)
 
@@ -162,33 +206,38 @@ def _update_stat(conn: sqlite3.Connection, stat_name: str, increment: int = 1) -
         WHERE stat_name = ?
     """, (increment, _get_current_time(), stat_name))
 
+@retry_on_locked()
 def insert_post(conn: sqlite3.Connection, reddit_id: str, subreddit: str, url: str, created_utc: int) -> None:
     """Insert a new post if it doesn't exist."""
     cursor = conn.cursor()
     
-    # Insert the post
-    cursor.execute(
-        "INSERT OR IGNORE INTO posts (reddit_id, subreddit, url, created_utc, fetch_at_utc) VALUES (?, ?, ?, ?, ?)",
-        (reddit_id, subreddit, url, created_utc, _get_current_time())
-    )
-    
-    # If a new post was inserted (rowcount > 0), update stats
-    if cursor.rowcount > 0:
-        _update_stat(conn, 'total_posts')
+    try:
+        # Insert the post
+        cursor.execute(
+            "INSERT OR IGNORE INTO posts (reddit_id, subreddit, url, created_utc, fetch_at_utc) VALUES (?, ?, ?, ?, ?)",
+            (reddit_id, subreddit, url, created_utc, _get_current_time())
+        )
         
-        # Update oldest/newest post if needed
-        cursor.execute("""
-            UPDATE post_stats 
-            SET stat_value = CASE 
-                WHEN stat_name = 'oldest_post' AND (stat_value = 0 OR stat_value > ?) THEN ?
-                WHEN stat_name = 'newest_post' AND (stat_value = 0 OR stat_value < ?) THEN ?
-                ELSE stat_value 
-            END,
-            last_updated_utc = ?
-            WHERE stat_name IN ('oldest_post', 'newest_post')
-        """, (created_utc, created_utc, created_utc, created_utc, _get_current_time()))
-    
-    conn.commit()
+        # If a new post was inserted (rowcount > 0), update stats
+        if cursor.rowcount > 0:
+            _update_stat(conn, 'total_posts')
+            
+            # Update oldest/newest post if needed
+            cursor.execute("""
+                UPDATE post_stats 
+                SET stat_value = CASE 
+                    WHEN stat_name = 'oldest_post' AND (stat_value = 0 OR stat_value > ?) THEN ?
+                    WHEN stat_name = 'newest_post' AND (stat_value = 0 OR stat_value < ?) THEN ?
+                    ELSE stat_value 
+                END,
+                last_updated_utc = ?
+                WHERE stat_name IN ('oldest_post', 'newest_post')
+            """, (created_utc, created_utc, created_utc, created_utc, _get_current_time()))
+        
+        conn.commit()
+    except sqlite3.Error as e:
+        logger.error(f"Failed to insert post: {e}")
+        raise
 
 def get_posts_to_fetch(conn: sqlite3.Connection, limit: int = 10) -> list[tuple[int, str]]:
     """Get posts that are ready to be fetched."""
@@ -202,30 +251,35 @@ def get_posts_to_fetch(conn: sqlite3.Connection, limit: int = 10) -> list[tuple[
     """, (_get_current_time(), limit))
     return cursor.fetchall()
 
+@retry_on_locked()
 def mark_post_as_fetched(conn: sqlite3.Connection, post_id: int, html_content: str) -> None:
     """Mark a post as fetched and store its HTML content."""
     current_time = _get_current_time()
     cursor = conn.cursor()
     
-    # Store the raw HTML, update post status, and increment counter in a single transaction
-    cursor.executescript(f"""
-        BEGIN TRANSACTION;
+    try:
+        # Store the raw HTML, update post status, and increment counter in a single transaction
+        cursor.executescript(f"""
+            BEGIN TRANSACTION;
+            
+            -- Store the raw HTML
+            INSERT INTO texts (post_id, raw_text)
+            VALUES ({post_id}, '{html_content.replace("'", "''")}');
+            
+            -- Update the post's fetched timestamp
+            UPDATE posts 
+            SET fetched_at_utc = {current_time},
+                fetch_at_utc = NULL
+            WHERE id = {post_id};
+            
+            COMMIT;
+        """)
         
-        -- Store the raw HTML
-        INSERT INTO texts (post_id, raw_text)
-        VALUES ({post_id}, '{html_content.replace("'", "''")}');
-        
-        -- Update the post's fetched timestamp
-        UPDATE posts 
-        SET fetched_at_utc = {current_time},
-            fetch_at_utc = NULL
-        WHERE id = {post_id};
-        
-        COMMIT;
-    """)
-    
-    # Update stats after successful transaction
-    _update_stat(conn, 'posts_fetched')
+        # Update stats after successful transaction
+        _update_stat(conn, 'posts_fetched')
+    except sqlite3.Error as e:
+        logger.error(f"Failed to mark post {post_id} as fetched: {e}")
+        raise
 
 def increment_retry_and_schedule(conn: sqlite3.Connection, post_id: int, retry_time: int) -> int:
     """Increment retry count and schedule next retry in a single query."""
@@ -264,30 +318,36 @@ def get_posts_to_process(conn: sqlite3.Connection, limit: int = 10) -> list[tupl
     """, (limit,))
     return cursor.fetchall()
 
+@retry_on_locked()
 def mark_post_as_processed(conn: sqlite3.Connection, post_id: int, processed_text: str) -> None:
     """Mark a post as processed and store its processed text."""
     current_time = _get_current_time()
     cursor = conn.cursor()
     
-    # Update processed text and mark post as processed in a single transaction
-    cursor.executescript(f"""
-        BEGIN TRANSACTION;
+    try:
+        # Store the processed text and update post status in a single transaction
+        cursor.executescript(f"""
+            BEGIN TRANSACTION;
+            
+            -- Update the text
+            UPDATE texts 
+            SET text = '{processed_text.replace("'", "''")}'
+            WHERE post_id = {post_id};
+            
+            -- Update the post's processed timestamp
+            UPDATE posts 
+            SET processed_at_utc = {current_time}
+            WHERE id = {post_id};
+            
+            COMMIT;
+        """)
         
-        -- Update the processed text
-        UPDATE texts 
-        SET text = '{processed_text.replace("'", "''")}'
-        WHERE post_id = {post_id};
+        # Update stats after successful transaction
+        _update_stat(conn, 'posts_processed')
         
-        -- Mark the post as processed
-        UPDATE posts 
-        SET processed_at_utc = {current_time}
-        WHERE id = {post_id};
-        
-        COMMIT;
-    """)
-    
-    # Update stats after successful transaction
-    _update_stat(conn, 'posts_processed')
+    except sqlite3.Error as e:
+        logger.error(f"Database error while marking post {post_id} as processed: {e}")
+        raise
 
 def get_posts_to_post(conn: sqlite3.Connection, limit: int = 10) -> list[tuple[int, str, str, str]]:
     """Get posts that have been processed but not posted yet."""
@@ -303,16 +363,21 @@ def get_posts_to_post(conn: sqlite3.Connection, limit: int = 10) -> list[tuple[i
     """, (limit,))
     return cursor.fetchall()
 
+@retry_on_locked()
 def mark_post_as_posted(conn: sqlite3.Connection, post_id: int) -> None:
     """Mark a post as posted."""
+    current_time = _get_current_time()
     cursor = conn.cursor()
     
-    # Mark post as posted in a single transaction
-    cursor.execute("""
-        UPDATE posts 
-        SET posted_at_utc = ?
-        WHERE id = ?
-    """, (_get_current_time(), post_id))
-    
-    # Update stats after successful transaction
-    _update_stat(conn, 'posts_posted') 
+    try:
+        cursor.execute("""
+            UPDATE posts 
+            SET posted_at_utc = ?
+            WHERE id = ?
+        """, (current_time, post_id))
+        
+        # Update stats after successful update
+        _update_stat(conn, 'posts_posted')
+    except sqlite3.Error as e:
+        logger.error(f"Failed to mark post {post_id} as posted: {e}")
+        raise 

@@ -30,7 +30,8 @@ class NewspaperFetcherThread(BaseThread):
                             self.logger.error(f"Failed to fetch {url}: {response.status_code}")
                             # Calculate retry time: 5 minutes * (2 ^ retry_count)
                             retry_time = int(time.time()) + (300 * (2 ** 0))  # Start with 5 minutes
-                            handle_fetch_retry(post_id, retry_time)
+                            if handle_fetch_retry(post_id, retry_time):
+                                self.logger.info(f"Post {post_id} was skipped due to max retries")
                             continue
                             
                         # Store the raw text
@@ -42,7 +43,8 @@ class NewspaperFetcherThread(BaseThread):
                         self.logger.error(f"Error processing {url}: {e}")
                         # Calculate retry time: 5 minutes * (2 ^ retry_count)
                         retry_time = int(time.time()) + (300 * (2 ** 0))  # Start with 5 minutes
-                        handle_fetch_retry(post_id, retry_time)
+                        if handle_fetch_retry(post_id, retry_time):
+                            self.logger.info(f"Post {post_id} was skipped due to max retries")
                         continue
                         
         except Exception as e:

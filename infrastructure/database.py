@@ -371,6 +371,27 @@ def mark_post_as_posted(conn: sqlite3.Connection, post_id: int) -> None:
         raise
 
 @retry_on_locked()
+def handle_fetch_retry(conn: sqlite3.Connection, post_id: int, retry_time: int) -> bool:
+    """Handle a fetch retry for a post. Returns True if post was skipped, False otherwise."""
+    try:
+        # First commit any pending transaction
+        conn.commit()
+        
+        # Increment retry count and schedule next retry
+        retry_count = increment_retry_and_schedule(conn, post_id, retry_time)
+        
+        # If max retries reached, delete the post and increment skipped stat
+        if retry_count > 3:
+            delete_post(conn, post_id)
+            _update_stat(conn, 'posts_skipped')
+            return True
+            
+        return False
+    except sqlite3.Error as e:
+        logger.error(f"Failed to handle fetch retry for post {post_id}: {e}")
+        raise
+
+@retry_on_locked()
 def mark_post_as_skipped(conn: sqlite3.Connection) -> None:
     """Increment the posts_skipped stat."""
     try:

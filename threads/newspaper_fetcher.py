@@ -9,9 +9,7 @@ from .base_thread import BaseThread
 from infrastructure.database import (
     get_posts_to_fetch, 
     mark_post_as_fetched, 
-    increment_retry_and_schedule,
-    delete_post,
-    _update_stat
+    handle_fetch_retry
 )
 
 class NewspaperFetcherThread(BaseThread):
@@ -57,17 +55,11 @@ class NewspaperFetcherThread(BaseThread):
                         # Handle fetch failure with retry logic
                         retry_time = int(time.time()) + (10 * 60)  # 10 minutes from now
                         try:
-                            retry_count = increment_retry_and_schedule(conn, post_id, retry_time)
-                            self.logger.info(f"Scheduled retry for post {post_id} at {datetime.fromtimestamp(retry_time).isoformat()}")
-                            
-                            if retry_count > 3:
-                                self.logger.info(f"Deleting post {post_id} after {retry_count} failed attempts")
-                                try:
-                                    delete_post(conn, post_id)
-                                    _update_stat(conn, 'posts_skipped')
-                                    self.logger.info(f"Deleted post {post_id} and its associated text")
-                                except sqlite3.Error as e:
-                                    self.logger.error(f"Database error while deleting post {post_id}: {e}")
+                            was_skipped = handle_fetch_retry(conn, post_id, retry_time)
+                            if was_skipped:
+                                self.logger.info(f"Post {post_id} was skipped after max retries")
+                            else:
+                                self.logger.info(f"Scheduled retry for post {post_id} at {datetime.fromtimestamp(retry_time).isoformat()}")
                         except sqlite3.Error as e:
                             self.logger.error(f"Database error while handling retry for post {post_id}: {e}")
                             continue

@@ -403,6 +403,10 @@ def handle_fetch_retry(post_id: int, retry_time: int) -> bool:
             # Increment retry count and schedule next retry
             retry_count = increment_retry_and_schedule(post_id, retry_time)
             
+            # Log the retry time
+            retry_time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(retry_time))
+            logger.info(f"Post {post_id} will be retried at {retry_time_str} (retry count: {retry_count})")
+            
             # If max retries reached, delete the post and increment skipped stat
             if retry_count > 3:
                 delete_post(post_id)
